@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ATLAS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --black: #08090b;
+    --black-2: #101215;
+    --black-3: #16181c;
+    --orange: #ff7a1a;
+    --orange-dim: #b8560f;
+    --orange-glow: rgba(255, 122, 26, 0.35);
+    --white: #f4f4f2;
+    --white-dim: rgba(244,244,242,0.55);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--black);
+    color: var(--white);
+    font-family: 'Courier New', ui-monospace, monospace;
+    overflow: hidden;
+  }
+  body {
+    background:
+      radial-gradient(circle at 50% 45%, rgba(255,122,26,0.05), transparent 55%),
+      var(--black);
+    display: grid;
+    grid-template-rows: 1fr auto;
+    height: 100vh;
+    padding: 18px;
+    gap: 14px;
+  }
+
+  /* ---------- Top grid ---------- */
+  .main {
+    display: grid;
+    grid-template-columns: 240px 1fr 240px;
+    gap: 16px;
+    height: 100%;
+    min-height: 0;
+  }
+  .col { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+
+  .panel {
+    background: linear-gradient(180deg, var(--black-2), var(--black-3));
+    border: 1px solid rgba(255,122,26,0.18);
+    border-radius: 10px;
+    padding: 14px 16px;
+    position: relative;
+    overflow: hidden;
+  }
+  .panel::before {
+    content: "";
+    position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--orange), transparent);
+    opacity: 0.6;
+  }
+  .panel-title {
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--orange);
+    margin-bottom: 10px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .panel-title .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--orange);
+    box-shadow: 0 0 8px var(--orange);
+  }
+
+  /* Metric rows */
+  .metric { margin-bottom: 12px; }
+  .metric:last-child { margin-bottom: 0; }
+  .metric-label {
+    display: flex; justify-content: space-between;
+    font-size: 11px; color: var(--white-dim);
+    margin-bottom: 5px; letter-spacing: 1px; text-transform: uppercase;
+  }
+  .metric-label span:last-child { color: var(--orange); font-weight: bold; }
+  .bar { height: 4px; background: rgba(255,122,26,0.12); border-radius: 2px; overflow: hidden; }
+  .bar-fill { height: 100%; background: linear-gradient(90deg, var(--orange-dim), var(--orange)); box-shadow: 0 0 6px var(--orange-glow); }
+
+  .status-row {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 11.5px; padding: 6px 0;
+    border-bottom: 1px solid rgba(255,122,26,0.08);
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .status-row:last-child { border-bottom: none; }
+  .status-row .label { color: var(--white-dim); }
+  .status-row .val { color: var(--orange); font-weight: bold; }
+  .val.ok::before { content: "● "; color: #ff9a3d; }
+
+  .clock-panel { text-align: center; padding: 20px 16px; }
+  .clock-time { font-size: 30px; font-weight: bold; color: var(--orange); letter-spacing: 2px; text-shadow: 0 0 14px var(--orange-glow); }
+  .clock-date { font-size: 11px; color: var(--white-dim); margin-top: 4px; letter-spacing: 1px; text-transform: uppercase; }
+
+  .actions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .action-btn {
+    background: rgba(255,122,26,0.08);
+    border: 1px solid rgba(255,122,26,0.3);
+    color: var(--white);
+    padding: 10px 6px;
+    border-radius: 6px;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, box-shadow 0.15s;
+  }
+  .action-btn:hover { background: rgba(255,122,26,0.2); box-shadow: 0 0 12px var(--orange-glow); }
+
+  /* ---------- Center core ---------- */
+  .core-wrap {
+    display: flex; align-items: center; justify-content: center;
+    position: relative; min-height: 0;
+  }
+  .core-label {
+    position: absolute; bottom: 6%; left: 50%; transform: translateX(-50%);
+    font-size: 11px; letter-spacing: 4px; color: var(--white-dim);
+    text-transform: uppercase;
+  }
+  .core-label span { color: var(--orange); }
+
+  svg#core { width: min(58vh, 100%); height: min(58vh, 100%); }
+
+  .ring { transform-origin: 200px 200px; }
+  .ring-a { animation: spin 18s linear infinite; }
+  .ring-b { animation: spin-rev 26s linear infinite; }
+  .ring-c { animation: spin 40s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes spin-rev { to { transform: rotate(-360deg); } }
+
+  .core-center {
+    fill: var(--black);
+    stroke: var(--orange);
+    stroke-width: 1.5;
+    filter: drop-shadow(0 0 10px var(--orange-glow));
+  }
+  .pulse-core {
+    fill: var(--orange);
+    opacity: 0.85;
+    transition: r 0.08s linear, opacity 0.2s;
+  }
+
+  /* talking state */
+  body.talking .ring-a { animation-duration: 4s; }
+  body.talking .ring-b { animation-duration: 6s; }
+  body.talking .ring-c { animation-duration: 10s; }
+  body.talking .core-center { filter: drop-shadow(0 0 22px var(--orange)); }
+  body.talking .tick { opacity: 1; }
+  .tick { transition: opacity 0.3s; }
+  body:not(.talking) .tick { opacity: 0.35; }
+
+  /* rings/core group — pushed down and dimmed when a task is expanded */
+  .rings-group {
+    transform-origin: 200px 200px;
+    transition: transform 0.45s cubic-bezier(.4,0,.2,1), opacity 0.4s ease;
+  }
+  .rings-group.shrink {
+    transform: translateY(46px) scale(0.78);
+    opacity: 0.18;
+  }
+
+  /* ---------- Particle field (data cluster) ---------- */
+  .particle-shape {
+    transform-origin: 0px 0px;
+    transition: transform 0.12s linear, opacity 0.35s ease, fill 0.3s ease;
+    opacity: 0.55;
+  }
+  .particle-shape .fig {
+    fill: var(--orange-dim);
+  }
+  .particle-shape.linked .fig { fill: var(--orange); opacity: 0.8; }
+  .particle-shape.linked { cursor: pointer; opacity: 0.85; }
+  .particle-shape.linked:hover .fig { filter: drop-shadow(0 0 5px var(--orange-glow)); }
+  .particle-shape.dimmed { opacity: 0.06; }
+  .particle-shape.selected {
+    opacity: 1;
+    transition: transform 0.5s cubic-bezier(.4,0,.2,1), opacity 0.3s ease;
+  }
+  .particle-shape.selected .fig {
+    fill: var(--orange);
+    filter: drop-shadow(0 0 20px var(--orange));
+  }
+
+  /* Debrief panel */
+  .debrief {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%) scale(0.9);
+    width: min(300px, 82%);
+    max-height: 78%;
+    background: linear-gradient(180deg, var(--black-2), var(--black-3));
+    border: 1px solid var(--orange);
+    border-radius: 10px;
+    padding: 16px 18px;
+    box-shadow: 0 0 30px rgba(255,122,26,0.25);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+    overflow-y: auto;
+    z-index: 5;
+  }
+  .debrief.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+  .debrief-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 4px;
+  }
+  .debrief-title {
+    color: var(--orange); font-size: 13px; letter-spacing: 1.5px;
+    text-transform: uppercase; font-weight: bold;
+  }
+  .debrief-close {
+    background: none; border: none; color: var(--white-dim);
+    cursor: pointer; font-size: 13px; font-family: inherit;
+  }
+  .debrief-close:hover { color: var(--orange); }
+  .debrief-sub {
+    font-size: 10px; color: var(--white-dim); letter-spacing: 1px;
+    text-transform: uppercase; margin-bottom: 12px;
+  }
+  .debrief-entry {
+    border-left: 2px solid var(--orange-dim);
+    padding: 4px 0 4px 10px;
+    margin-bottom: 8px;
+    font-size: 11.5px;
+    color: var(--white);
+    line-height: 1.4;
+  }
+  .debrief-entry .t {
+    display: block; color: var(--orange); font-size: 9.5px;
+    letter-spacing: 1px; margin-bottom: 2px;
+  }
+  .debrief-empty { font-size: 11px; color: var(--white-dim); font-style: italic; }
+
+  /* ---------- Floating profit panel ---------- */
+  .profit-bar {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 92%;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    row-gap: 10px;
+    gap: 18px;
+    padding: 14px 20px;
+  }
+  .profit-bar .panel-title { margin-bottom: 0; white-space: nowrap; }
+  .profit-total { display: flex; flex-direction: column; }
+  .profit-total .amount {
+    font-size: 22px; font-weight: bold; color: var(--orange);
+    text-shadow: 0 0 10px var(--orange-glow); letter-spacing: 1px;
+  }
+  .profit-total .sub { font-size: 10px; color: var(--white-dim); letter-spacing: 1px; text-transform: uppercase; }
+  .profit-divider { width: 1px; height: 30px; background: rgba(255,122,26,0.2); }
+  .profit-today { display: flex; flex-direction: column; }
+  .profit-today .sub { font-size: 10px; color: var(--white-dim); letter-spacing: 1px; text-transform: uppercase; }
+  .profit-today .val { font-size: 14px; color: var(--white); }
+  .profit-today .val.unlogged { color: var(--white-dim); font-style: italic; }
+  .profit-log { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .profit-log input {
+    width: 110px;
+    background: rgba(255,122,26,0.06);
+    border: 1px solid rgba(255,122,26,0.25);
+    border-radius: 6px;
+    padding: 7px 10px;
+    color: var(--white);
+    font-family: inherit;
+    font-size: 12px;
+  }
+  .profit-log input:focus { outline: none; border-color: var(--orange); }
+  .profit-log button {
+    background: rgba(255,122,26,0.12);
+    border: 1px solid var(--orange);
+    color: var(--orange);
+    padding: 7px 14px;
+    border-radius: 6px;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .profit-log button:hover { background: rgba(255,122,26,0.25); }
+
+  /* ---------- Bottom bar ---------- */
+  .bottom {
+    background: linear-gradient(180deg, var(--black-3), var(--black-2));
+    border: 1px solid rgba(255,122,26,0.2);
+    border-radius: 10px;
+    padding: 10px 18px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 8px;
+    font-weight: bold; letter-spacing: 3px; color: var(--orange);
+    font-size: 15px;
+  }
+  .brand-mark {
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 2px solid var(--orange);
+    position: relative;
+  }
+  .brand-mark::after {
+    content: ""; position: absolute; inset: 5px;
+    border-radius: 50%; background: var(--orange);
+    box-shadow: 0 0 8px var(--orange);
+  }
+  .icon-btn {
+    width: 30px; height: 30px; border-radius: 6px;
+    border: 1px solid rgba(255,122,26,0.25);
+    background: transparent; color: var(--white-dim);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; cursor: pointer;
+  }
+  .icon-btn:hover { color: var(--orange); border-color: var(--orange); }
+  #micBtn.active { background: var(--orange); color: var(--black); box-shadow: 0 0 14px var(--orange); }
+
+  .ask-input {
+    flex: 1;
+    background: rgba(255,122,26,0.06);
+    border: 1px solid rgba(255,122,26,0.25);
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: var(--white);
+    font-family: inherit;
+    font-size: 12.5px;
+    letter-spacing: 0.5px;
+  }
+  .ask-input::placeholder { color: var(--white-dim); }
+  .ask-input:focus { outline: none; border-color: var(--orange); }
+
+  .bottom-right { display: flex; align-items: center; gap: 14px; font-size: 11px; color: var(--white-dim); }
+  .user-chip { display: flex; align-items: center; gap: 6px; }
+  .user-dot { width: 20px; height: 20px; border-radius: 50%; background: var(--orange-dim); display:flex; align-items:center; justify-content:center; font-size:10px; color: var(--black); font-weight:bold; }
+</style>
+</head>
+<body>
+
+<div class="main">
+  <div class="col">
+    <div class="panel">
+      <div class="panel-title"><span class="dot"></span>System Performance</div>
+      <div class="metric">
+        <div class="metric-label"><span>CPU</span><span id="cpuVal">42.1%</span></div>
+        <div class="bar"><div class="bar-fill" id="cpuBar" style="width:42%"></div></div>
+      </div>
+      <div class="metric">
+        <div class="metric-label"><span>Memory</span><span id="memVal">64.3%</span></div>
+        <div class="bar"><div class="bar-fill" id="memBar" style="width:64%"></div></div>
+      </div>
+      <div class="metric">
+        <div class="metric-label"><span>Storage</span><span>63%</span></div>
+        <div class="bar"><div class="bar-fill" style="width:63%"></div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title"><span class="dot"></span>Quick Status</div>
+      <div class="status-row"><span class="label">Network</span><span class="val ok">Online</span></div>
+      <div class="status-row"><span class="label">Disk</span><span class="val ok">Healthy</span></div>
+      <div class="status-row"><span class="label">Uptime</span><span class="val">3d 14h</span></div>
+    </div>
+
+    <div class="panel clock-panel" style="margin-top:auto;">
+      <div class="clock-time" id="clockTime">--:--:--</div>
+      <div class="clock-date" id="clockDate">-- -- ----</div>
+    </div>
+  </div>
+
+  <div class="col core-wrap">
+    <div class="panel profit-bar">
+      <div class="panel-title"><span class="dot"></span>Profit</div>
+      <div class="profit-total">
+        <div class="amount" id="profitTotal">$0.00</div>
+        <div class="sub" id="profitSub">This month · 0 days logged</div>
+      </div>
+      <div class="profit-divider"></div>
+      <div class="profit-today">
+        <div class="sub">Today</div>
+        <div class="val unlogged" id="profitTodayVal">Not logged yet</div>
+      </div>
+      <div class="profit-log">
+        <input type="number" step="0.01" id="profitInput" placeholder="Today's profit" />
+        <button id="profitLogBtn">Log</button>
+      </div>
+    </div>
+
+    <svg id="core" viewBox="0 0 400 400">
+      <g id="ringsGroup" class="rings-group">
+        <g class="ring ring-c">
+          <circle cx="200" cy="200" r="188" fill="none" stroke="var(--orange-dim)" stroke-width="1" stroke-dasharray="1 7" opacity="0.6"/>
+          <g class="tick">
+            <rect x="196" y="4" width="8" height="16" fill="var(--orange)"/>
+            <rect x="196" y="380" width="8" height="16" fill="var(--orange)"/>
+          </g>
+        </g>
+        <g class="ring ring-b">
+          <circle cx="200" cy="200" r="158" fill="none" stroke="var(--orange)" stroke-width="1.5" opacity="0.45"/>
+          <circle cx="200" cy="200" r="158" fill="none" stroke="var(--orange)" stroke-width="6" opacity="0.9"
+                  stroke-dasharray="70 400" stroke-linecap="round"/>
+        </g>
+        <g class="ring ring-a">
+          <circle cx="200" cy="200" r="128" fill="none" stroke="var(--orange)" stroke-width="2" opacity="0.7"
+                  stroke-dasharray="40 20 8 20" stroke-linecap="round"/>
+        </g>
+        <circle class="core-center" cx="200" cy="200" r="92"/>
+        <circle class="pulse-core" id="pulseCore" cx="200" cy="200" r="14"/>
+        <g id="waveBars" stroke="var(--orange)" stroke-width="4" stroke-linecap="round" opacity="0.9"></g>
+      </g>
+      <g id="particleField"></g>
+    </svg>
+    <div class="core-label">STATUS: <span id="coreStatus">STANDBY</span></div>
+
+    <div class="debrief" id="debrief">
+      <div class="debrief-head">
+        <div class="debrief-title" id="debriefTitle">Task</div>
+        <button class="debrief-close" id="debriefClose">✕</button>
+      </div>
+      <div class="debrief-sub">Last 24 hours</div>
+      <div id="debriefBody"></div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="panel">
+      <div class="panel-title"><span class="dot"></span>AI Status</div>
+      <div class="status-row"><span class="label">State</span><span class="val ok">Online</span></div>
+      <div class="status-row"><span class="label">Response</span><span class="val">0.8s</span></div>
+      <div class="status-row"><span class="label">Mode</span><span class="val">Active</span></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title"><span class="dot"></span>Quick Actions</div>
+      <div class="actions-grid">
+        <button class="action-btn" id="newTaskBtn">New Task</button>
+        <button class="action-btn">Reminder</button>
+        <button class="action-btn">Calendar</button>
+        <button class="action-btn">Notes</button>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:auto;">
+      <div class="panel-title"><span class="dot"></span>Connections</div>
+      <div class="status-row"><span class="label">Shopify</span><span class="val ok">Linked</span></div>
+      <div class="status-row"><span class="label">Gmail</span><span class="val ok">Linked</span></div>
+      <div class="status-row"><span class="label">Notion</span><span class="val ok">Linked</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="bottom">
+  <div class="brand"><div class="brand-mark"></div>ATLAS</div>
+  <button class="icon-btn" id="micBtn" title="Toggle talking (demo)">●</button>
+  <input class="ask-input" placeholder="Ask ATLAS anything..." />
+  <div class="bottom-right">
+    <span id="bottomTime">--:-- --</span>
+    <div class="user-chip"><div class="user-dot">C</div>Cooper</div>
+  </div>
+</div>
+
+<script>
+  // ---- Supabase connection ----
+  const SUPABASE_URL = 'https://skdovcewfqeqohnwyvve.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrZG92Y2V3ZnFlcW9obnd5dnZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU1MzIyNjIsImV4cCI6MjEwMTEwODI2Mn0.rdVj812YVmERq2jFNi3Lz-qvjana4_SC-rcMl0CyqzQ';
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // Clock
+  function tick() {
+    const now = new Date();
+    const time = now.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    const date = now.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric', year:'numeric'});
+    document.getElementById('clockTime').textContent = time;
+    document.getElementById('clockDate').textContent = date;
+    document.getElementById('bottomTime').textContent = now.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
+  }
+  tick(); setInterval(tick, 1000);
+
+  // Fake metric drift
+  function drift(id, barId, base) {
+    const v = Math.max(5, Math.min(95, base + (Math.random()*6-3)));
+    document.getElementById(id).textContent = v.toFixed(1) + '%';
+    document.getElementById(barId).style.width = v + '%';
+    return v;
+  }
+  let cpuBase = 42, memBase = 64;
+  setInterval(() => {
+    cpuBase = drift('cpuVal','cpuBar', cpuBase);
+    memBase = drift('memVal','memBar', memBase);
+  }, 2200);
+
+  // Talking simulation — click mic to toggle
+  const micBtn = document.getElementById('micBtn');
+  const pulseCore = document.getElementById('pulseCore');
+  const coreStatus = document.getElementById('coreStatus');
+  const waveBars = document.getElementById('waveBars');
+  let talking = false;
+  let waveInterval = null;
+
+  // build waveform bars around center
+  const bars = [];
+  const barCount = 24;
+  for (let i = 0; i < barCount; i++) {
+    const angle = (i / barCount) * Math.PI * 2;
+    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1', 200 + Math.cos(angle)*40);
+    line.setAttribute('y1', 200 + Math.sin(angle)*40);
+    line.setAttribute('x2', 200 + Math.cos(angle)*55);
+    line.setAttribute('y2', 200 + Math.sin(angle)*55);
+    line.style.opacity = '0';
+    waveBars.appendChild(line);
+    bars.push({el: line, angle});
+  }
+
+  function setTalking(state) {
+    talking = state;
+    document.body.classList.toggle('talking', talking);
+    micBtn.classList.toggle('active', talking);
+    coreStatus.textContent = talking ? 'LISTENING' : 'STANDBY';
+
+    if (talking) {
+      waveInterval = setInterval(() => {
+        const r = 14 + Math.random() * 10;
+        pulseCore.setAttribute('r', r);
+        bars.forEach(b => {
+          const len = 10 + Math.random() * 30;
+          b.el.style.opacity = 0.4 + Math.random()*0.6;
+          b.el.setAttribute('x2', 200 + Math.cos(b.angle)*(40+len));
+          b.el.setAttribute('y2', 200 + Math.sin(b.angle)*(40+len));
+        });
+      }, 90);
+    } else {
+      clearInterval(waveInterval);
+      pulseCore.setAttribute('r', 14);
+      bars.forEach(b => b.el.style.opacity = '0');
+    }
+  }
+
+  micBtn.addEventListener('click', () => setTalking(!talking));
+
+  /* ================= Particle field / task system ================= */
+  // "Particles" are the small unlabeled shapes packed inside the core.
+  // A subset gets silently bound to a real task when that task is created.
+  const particleField = document.getElementById('particleField');
+  const ringsGroup = document.getElementById('ringsGroup');
+  const debriefEl = document.getElementById('debrief');
+  const debriefTitle = document.getElementById('debriefTitle');
+  const debriefBody = document.getElementById('debriefBody');
+  const askInput = document.querySelector('.ask-input');
+
+  const now = Date.now();
+  const hr = 3600 * 1000;
+
+  const SHAPE_TYPES = ['circle'];
+  const PARTICLE_COUNT = 90;
+  const CENTER = 200;
+  const MIN_R = 22;   // keep clear of the pulse core
+  const MAX_R = 82;   // stay inside the black core disc (r=92)
+  const MAX_PARTICLE_SIZE = 10; // main pulse dot is r=14 idle, up to ~24 talking — stay under both
+
+  let particles = [];
+  let tasks = [];
+  let selectedTaskId = null;
+
+  function makeParticle(i) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = MIN_R + Math.random() * (MAX_R - MIN_R);
+    const sizeBase = 3 + Math.random() * 4;              // 3–7
+    const sizeAmp = Math.min(2.5, MAX_PARTICLE_SIZE - sizeBase - 0.5);
+    return {
+      id: 'p' + i,
+      taskId: null,
+      dist,
+      angle,
+      angularSpeed: (0.08 + Math.random() * 0.35) * (Math.random() < 0.5 ? -1 : 1), // rad/s, mixed CW/CCW
+      sizeBase,
+      sizeAmp: Math.max(0.6, sizeAmp),
+      sizePhase: Math.random() * Math.PI * 2,
+      sizeSpeed: 0.4 + Math.random() * 0.8,
+      gEl: null, circleEl: null,
+    };
+  }
+
+  function seedParticles() {
+    for (let i = 0; i < PARTICLE_COUNT; i++) particles.push(makeParticle(i));
+  }
+  seedParticles();
+
+  function buildParticleDOM(p) {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('class', 'particle-shape');
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('class', 'fig');
+    circle.setAttribute('r', p.sizeBase);
+    g.appendChild(circle);
+    particleField.appendChild(g);
+    p.gEl = g; p.circleEl = circle;
+  }
+
+  function renderParticles() {
+    // build DOM once per particle, then just toggle classes/transform on selection changes
+    particles.forEach(p => {
+      if (!p.gEl) buildParticleDOM(p);
+      let cls = 'particle-shape';
+      if (p.taskId) cls += ' linked';
+      if (selectedTaskId && p.taskId === selectedTaskId) cls += ' selected';
+      else if (selectedTaskId) cls += ' dimmed';
+      p.gEl.setAttribute('class', cls);
+
+      if (selectedTaskId && p.taskId === selectedTaskId) {
+        p.gEl.setAttribute('transform', `translate(${CENTER},${CENTER}) scale(${68 / p.sizeBase})`);
+      }
+      if (p.taskId && !p.gEl.dataset.bound) {
+        p.gEl.addEventListener('click', () => selectTask(p.taskId));
+        p.gEl.dataset.bound = '1';
+      }
+    });
+  }
+  renderParticles();
+
+  // Continuous ambient motion — orbit + gentle size breathing, skipped for the
+  // currently-expanded particle since that one is pinned center via CSS transition.
+  let lastFrame = performance.now();
+  function animateParticles(t) {
+    const dt = Math.min(0.05, (t - lastFrame) / 1000);
+    lastFrame = t;
+    particles.forEach(p => {
+      if (selectedTaskId && p.taskId === selectedTaskId) return; // pinned to center, don't fight the CSS transition
+      p.angle += p.angularSpeed * dt;
+      const x = CENTER + Math.cos(p.angle) * p.dist;
+      const y = CENTER + Math.sin(p.angle) * p.dist;
+      const size = Math.max(1.2, p.sizeBase + Math.sin(t / 1000 * p.sizeSpeed + p.sizePhase) * p.sizeAmp);
+      if (p.gEl) p.gEl.setAttribute('transform', `translate(${x},${y})`);
+      if (p.circleEl) p.circleEl.setAttribute('r', size);
+    });
+    requestAnimationFrame(animateParticles);
+  }
+  requestAnimationFrame(animateParticles);
+
+  function claimParticle(taskId) {
+    let free = particles.filter(p => !p.taskId);
+    if (free.length === 0) {
+      const p = makeParticle(particles.length);
+      particles.push(p);
+      free = [p];
+    }
+    const chosen = free[Math.floor(Math.random() * free.length)];
+    chosen.taskId = taskId;
+    return chosen;
+  }
+
+  function recentLogs(task) {
+    const cutoff = Date.now() - 24 * hr;
+    return task.logs.filter(l => l.time.getTime() >= cutoff).sort((a,b) => b.time - a.time);
+  }
+  function timeAgo(date) {
+    const mins = Math.round((Date.now() - date.getTime()) / 60000);
+    if (mins < 60) return mins + 'm ago';
+    return Math.round(mins / 60) + 'h ago';
+  }
+  function escapeHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  function selectTask(id) {
+    selectedTaskId = id;
+    ringsGroup.classList.add('shrink');
+    renderParticles();
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+    debriefTitle.textContent = task.name;
+    const entries = recentLogs(task);
+    debriefBody.innerHTML = entries.length
+      ? entries.map(e => `<div class="debrief-entry"><span class="t">${timeAgo(e.time)}</span>${escapeHtml(e.text)}</div>`).join('')
+      : '<div class="debrief-empty">No activity logged in the last 24 hours.</div>';
+    debriefEl.classList.add('open');
+  }
+
+  function closeDebrief() {
+    debriefEl.classList.remove('open');
+    ringsGroup.classList.remove('shrink');
+    selectedTaskId = null;
+    renderParticles();
+  }
+  document.getElementById('debriefClose').addEventListener('click', closeDebrief);
+
+  function findTask(query) {
+    const q = query.trim().toLowerCase();
+    if (!q) return null;
+    return tasks.find(t => t.name.toLowerCase().includes(q)) || null;
+  }
+
+  // Public API
+  //   atlas.addTask('Task Name')            -> creates a row in Supabase, auto-claims a particle
+  //   atlas.logActivity('Task Name', 'text') -> appends a timestamped debrief entry (persisted)
+  //   atlas.ask('bring up content calendar') -> expands the matching task in the core
+  window.atlas = {
+    async addTask(name) {
+      const { data, error } = await sb.from('tasks').insert({ name }).select().single();
+      if (error) { console.error('addTask error:', error); return null; }
+      await sb.from('task_logs').insert({ task_id: data.id, entry: 'Task created.' });
+      tasks.push({ id: data.id, name, logs: [{ time: new Date(), text: 'Task created.' }] });
+      claimParticle(data.id);
+      renderParticles();
+      return data.id;
+    },
+    async logActivity(taskNameOrId, text) {
+      const task = tasks.find(t => t.id === taskNameOrId) || findTask(taskNameOrId);
+      if (!task) return false;
+      const { error } = await sb.from('task_logs').insert({ task_id: task.id, entry: text });
+      if (error) { console.error('logActivity error:', error); return false; }
+      task.logs.push({ time: new Date(), text });
+      if (task.id === selectedTaskId) selectTask(task.id);
+      return true;
+    },
+    ask(query) {
+      const task = findTask(query);
+      if (task) selectTask(task.id);
+      return !!task;
+    }
+  };
+
+  async function seedDefaultTasks() {
+    const defaults = [
+      { name: 'POD Orders', logs: ['3 new orders synced from Shopify.', 'Fulfillment confirmed for order #4482 via TapStitch.'] },
+      { name: 'Content Calendar', logs: ['Drafted 3 post captions for next week.'] },
+      { name: 'ActiveScapes Filming', logs: ['Uploaded raw footage from Tuesday shoot.'] },
+    ];
+    for (const d of defaults) {
+      const { data, error } = await sb.from('tasks').insert({ name: d.name }).select().single();
+      if (error) { console.error('seed error:', error); continue; }
+      for (const text of d.logs) {
+        await sb.from('task_logs').insert({ task_id: data.id, entry: text });
+      }
+    }
+  }
+
+  async function loadTasksFromDB() {
+    const { data: taskRows, error } = await sb.from('tasks').select('id, name').order('created_at', { ascending: true });
+    if (error) { console.error('loadTasksFromDB error:', error); return; }
+    if (!taskRows || taskRows.length === 0) {
+      await seedDefaultTasks();
+      return loadTasksFromDB();
+    }
+    const { data: logRows } = await sb
+      .from('task_logs')
+      .select('task_id, entry, created_at')
+      .gte('created_at', new Date(Date.now() - 48 * hr).toISOString())
+      .order('created_at', { ascending: false });
+    tasks = taskRows.map(t => ({
+      id: t.id,
+      name: t.name,
+      logs: (logRows || [])
+        .filter(l => l.task_id === t.id)
+        .map(l => ({ time: new Date(l.created_at), text: l.entry })),
+    }));
+    tasks.forEach(t => claimParticle(t.id));
+    renderParticles();
+  }
+  loadTasksFromDB();
+
+  document.getElementById('newTaskBtn').addEventListener('click', () => {
+    const name = prompt('New task name:');
+    if (name && name.trim()) window.atlas.addTask(name.trim());
+  });
+
+  askInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && askInput.value.trim()) {
+      const matched = window.atlas.ask(askInput.value);
+      if (!matched) closeDebrief();
+      askInput.value = '';
+    }
+  });
+
+  /* ================= Profit tracker (Supabase-backed) ================= */
+  // profit_entries: { day (date, unique), amount (numeric) }
+  // "Refreshing on the 1st" just falls out of filtering by current month —
+  // nothing to manually reset, old months' rows just stay in the table.
+  const profitTotalEl = document.getElementById('profitTotal');
+  const profitSubEl = document.getElementById('profitSub');
+  const profitTodayValEl = document.getElementById('profitTodayVal');
+  const profitInput = document.getElementById('profitInput');
+  const profitLogBtn = document.getElementById('profitLogBtn');
+
+  function dayKey(d = new Date()) {
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+  function monthLabel(d = new Date()) {
+    return d.toLocaleDateString('en-US', { month: 'long' });
+  }
+  function monthBounds(d = new Date()) {
+    const start = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
+    const nextMonth = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    const end = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth()+1).padStart(2,'0')}-01`;
+    return { start, end };
+  }
+
+  async function loadMonthData() {
+    const { start, end } = monthBounds();
+    const { data, error } = await sb
+      .from('profit_entries')
+      .select('day, amount')
+      .gte('day', start)
+      .lt('day', end);
+    if (error) { console.error('Profit load error:', error); return { days: {} }; }
+    const days = {};
+    data.forEach(row => { days[row.day] = Number(row.amount); });
+    return { days };
+  }
+
+  async function saveDayAmount(amount) {
+    const { error } = await sb
+      .from('profit_entries')
+      .upsert({ day: dayKey(), amount }, { onConflict: 'day' });
+    if (error) console.error('Profit save error:', error);
+  }
+
+  function renderProfit(data) {
+    const values = Object.values(data.days);
+    const total = values.reduce((sum, v) => sum + v, 0);
+    profitTotalEl.textContent = '$' + total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    profitSubEl.textContent = `${monthLabel()} · ${values.length} day${values.length === 1 ? '' : 's'} logged`;
+
+    const today = data.days[dayKey()];
+    if (today !== undefined) {
+      profitTodayValEl.textContent = '$' + today.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      profitTodayValEl.classList.remove('unlogged');
+      profitInput.value = today;
+    } else {
+      profitTodayValEl.textContent = 'Not logged yet';
+      profitTodayValEl.classList.add('unlogged');
+    }
+  }
+
+  async function logTodayProfit() {
+    const val = parseFloat(profitInput.value);
+    if (isNaN(val)) return;
+    await saveDayAmount(val);
+    renderProfit(await loadMonthData());
+  }
+  profitLogBtn.addEventListener('click', logTodayProfit);
+  profitInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') logTodayProfit(); });
+
+  loadMonthData().then(renderProfit);
+</script>
+</body>
+</html>
