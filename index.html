@@ -462,22 +462,32 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .chi-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
-  .chi-btn {
-    width: 18px; height: 18px;
+
+  .context-menu {
+    position: fixed;
+    z-index: 50;
+    background: var(--black-2);
+    border: 1px solid rgba(255,122,26,0.3);
+    border-radius: 6px;
+    padding: 4px;
+    min-width: 120px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+  .context-menu-item {
+    display: block;
+    width: 100%;
+    text-align: left;
     background: none;
     border: none;
-    color: var(--white-dim);
+    color: var(--white);
     font-size: 11px;
-    line-height: 1;
+    padding: 7px 10px;
     cursor: pointer;
-    border-radius: 3px;
-    display: flex; align-items: center; justify-content: center;
+    border-radius: 4px;
     font-family: inherit;
   }
-  .chi-btn:hover { color: var(--orange); background: rgba(255,122,26,0.15); }
-  .chat-history-item.pinned .chi-pin { color: var(--orange); }
-  .chi-delete:hover { color: #ff5c5c; background: rgba(255,92,92,0.12); }
+  .context-menu-item:hover { background: rgba(255,122,26,0.15); color: var(--orange); }
+  .context-menu-item.danger:hover { background: rgba(255,92,92,0.15); color: #ff5c5c; }
 
   /* ---------- Mini core (relocated during chat) — free-floating, no box ---------- */
   #coreHome { will-change: transform; }
@@ -667,6 +677,12 @@
     <span id="bottomTime">--:-- --</span>
     <div class="user-chip"><div class="user-dot">C</div>Cooper</div>
   </div>
+</div>
+
+<div id="chatContextMenu" class="context-menu" style="display:none;">
+  <button class="context-menu-item" id="ctxPin">Pin</button>
+  <button class="context-menu-item" id="ctxRename">Rename</button>
+  <button class="context-menu-item danger" id="ctxDelete">Delete</button>
 </div>
 
 <script>
@@ -1000,21 +1016,17 @@
     chatHistoryListEl.innerHTML = cachedConversations.length
       ? cachedConversations.map((c) => `
         <div class="chat-history-item${c.id === currentConversationId ? ' active' : ''}${c.pinned ? ' pinned' : ''}" data-id="${c.id}">
-          <span class="chi-label">${escapeHtml(c.title || c.label || 'New chat')}</span>
-          <span class="chi-actions">
-            <button class="chi-btn chi-pin" title="${c.pinned ? 'Unpin' : 'Pin'}">${c.pinned ? '★' : '☆'}</button>
-            <button class="chi-btn chi-rename" title="Rename">✎</button>
-            <button class="chi-btn chi-delete" title="Delete">✕</button>
-          </span>
+          <span class="chi-label">${c.pinned ? '★ ' : ''}${escapeHtml(c.title || c.label || 'New chat')}</span>
         </div>`).join('')
       : '<div class="chat-history-item" style="cursor:default;"><span class="chi-label">No chats yet</span></div>';
 
     chatHistoryListEl.querySelectorAll('.chat-history-item[data-id]').forEach((el) => {
       const id = el.dataset.id;
-      el.querySelector('.chi-label').addEventListener('click', () => { switchConversation(id); askInput.focus(); });
-      el.querySelector('.chi-pin').addEventListener('click', (e) => { e.stopPropagation(); togglePin(id); });
-      el.querySelector('.chi-rename').addEventListener('click', (e) => { e.stopPropagation(); renameConversation(id); });
-      el.querySelector('.chi-delete').addEventListener('click', (e) => { e.stopPropagation(); deleteConversation(id); });
+      el.addEventListener('click', () => { switchConversation(id); askInput.focus(); });
+      el.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        showContextMenu(e.clientX, e.clientY, id);
+      });
     });
   }
 
@@ -1029,11 +1041,14 @@
     renderChatHistoryList();
   }
 
+  // upsert, not update — a conversation created before this feature existed
+  // has no row yet in claude_conversations, so a plain update silently does
+  // nothing. Upsert always works whether the row exists yet or not.
   async function togglePin(id) {
     const conv = cachedConversations.find((c) => c.id === id);
     if (!conv) return;
     try {
-      await sb.from('claude_conversations').update({ pinned: !conv.pinned }).eq('id', id);
+      await sb.from('claude_conversations').upsert({ id, pinned: !conv.pinned }, { onConflict: 'id' });
     } catch (err) {
       console.error('Pin toggle error:', err);
     }
@@ -1045,12 +1060,36 @@
     const name = prompt('Rename chat:', conv ? (conv.title || conv.label || '') : '');
     if (name === null || !name.trim()) return;
     try {
-      await sb.from('claude_conversations').update({ title: name.trim() }).eq('id', id);
+      await sb.from('claude_conversations').upsert({ id, title: name.trim() }, { onConflict: 'id' });
     } catch (err) {
       console.error('Rename error:', err);
     }
     refreshConversationList();
   }
+
+  // ---- Right-click context menu ----
+  const contextMenu = document.getElementById('chatContextMenu');
+  const ctxPinBtn = document.getElementById('ctxPin');
+  let contextMenuTargetId = null;
+
+  function showContextMenu(x, y, id) {
+    contextMenuTargetId = id;
+    const conv = cachedConversations.find((c) => c.id === id);
+    ctxPinBtn.textContent = conv && conv.pinned ? 'Unpin' : 'Pin';
+    contextMenu.style.left = Math.min(x, window.innerWidth - 140) + 'px';
+    contextMenu.style.top = Math.min(y, window.innerHeight - 110) + 'px';
+    contextMenu.style.display = 'block';
+  }
+  function hideContextMenu() {
+    contextMenu.style.display = 'none';
+    contextMenuTargetId = null;
+  }
+  document.addEventListener('click', (e) => {
+    if (!contextMenu.contains(e.target)) hideContextMenu();
+  });
+  ctxPinBtn.addEventListener('click', () => { if (contextMenuTargetId) togglePin(contextMenuTargetId); hideContextMenu(); });
+  document.getElementById('ctxRename').addEventListener('click', () => { if (contextMenuTargetId) renameConversation(contextMenuTargetId); hideContextMenu(); });
+  document.getElementById('ctxDelete').addEventListener('click', () => { if (contextMenuTargetId) deleteConversation(contextMenuTargetId); hideContextMenu(); });
 
   async function deleteConversation(id) {
     if (!confirm('Delete this chat permanently? This cannot be undone.')) return;
@@ -1104,22 +1143,9 @@
   }
 
   /* ================= Global memory — persists across every conversation ================= */
-  let memoryFacts = [];
-
-  async function loadMemoryFacts() {
-    try {
-      const { data, error } = await sb.from('claude_memory').select('content').order('created_at', { ascending: true });
-      if (error) { console.error('Memory load error:', error); return; }
-      memoryFacts = (data || []).map((r) => r.content);
-    } catch (err) {
-      console.error('Memory load failed:', err);
-    }
-  }
-
   async function saveMemoryFact(content) {
     content = (content || '').trim();
     if (!content) return;
-    memoryFacts.push(content);
     try {
       await sb.from('claude_memory').insert({ content });
     } catch (err) {
@@ -1127,10 +1153,19 @@
     }
   }
 
-  function buildSystemPrompt() {
-    if (!memoryFacts.length) return undefined;
-    return 'Pinned facts the user explicitly asked to be remembered:\n' +
-      memoryFacts.map((f) => '- ' + f).join('\n');
+  // Fetched fresh on every message — not cached — so a just-opened tab can
+  // never send before memory has finished loading.
+  async function buildSystemPrompt() {
+    try {
+      const { data, error } = await sb.from('claude_memory').select('content').order('created_at', { ascending: true });
+      if (error) { console.error('Memory load error:', error); return undefined; }
+      if (!data || !data.length) return undefined;
+      return 'Pinned facts the user explicitly asked to be remembered:\n' +
+        data.map((r) => '- ' + r.content).join('\n');
+    } catch (err) {
+      console.error('Memory load failed:', err);
+      return undefined;
+    }
   }
 
   // Pulls the most recent messages across EVERY conversation, not just the
@@ -1166,7 +1201,7 @@
     appendChatBubble('user', text);
 
     // Explicit override: "remember: ..." pins something permanently, no API call.
-    const rememberMatch = text.match(/^remember:\s*(.+)/i);
+    const rememberMatch = text.match(/^remember:\s*([\s\S]+)/i);
     if (rememberMatch) {
       await saveMemoryFact(rememberMatch[1]);
       appendChatBubble('assistant', "Got it — I'll remember that.");
@@ -1182,10 +1217,11 @@
 
     try {
       const contextMessages = [...priorGlobalContext, { role: 'user', content: text }];
+      const systemPrompt = await buildSystemPrompt();
       const res = await fetch(CLAUDE_PROXY_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: contextMessages, model: selectedModel, system: buildSystemPrompt() }),
+        body: JSON.stringify({ messages: contextMessages, model: selectedModel, system: systemPrompt }),
       });
       const data = await res.json();
       const reply = data.reply || 'No response.';
@@ -1208,7 +1244,6 @@
       switchConversation(cachedConversations[0].id, false);
     }
   });
-  loadMemoryFacts();
 
   function selectTask(id) {
     selectedTaskId = id;
