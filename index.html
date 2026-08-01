@@ -449,20 +449,45 @@
   .chat-history-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
   .chat-history-item {
     font-size: 11px;
-    padding: 8px 10px;
+    padding: 7px 6px 7px 10px;
     border-radius: 6px;
     border: 1px solid rgba(255,122,26,0.12);
     background: rgba(255,122,26,0.04);
     color: var(--white-dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .chat-history-item:hover { border-color: rgba(255,122,26,0.35); color: var(--white); }
+  .chat-history-item.active { border-color: var(--orange); color: var(--white); background: rgba(255,122,26,0.1); }
+  .chat-history-item.pinned { border-color: rgba(255,122,26,0.3); }
+  .chi-label {
+    flex: 1;
+    min-width: 0;
     cursor: pointer;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .chat-history-item:hover { border-color: rgba(255,122,26,0.35); color: var(--white); }
-  .chat-history-item.active { border-color: var(--orange); color: var(--white); background: rgba(255,122,26,0.1); }
+  .chi-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+  .chi-btn {
+    width: 18px; height: 18px;
+    background: none;
+    border: none;
+    color: var(--white-dim);
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 3px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: inherit;
+  }
+  .chi-btn:hover { color: var(--orange); background: rgba(255,122,26,0.15); }
+  .chat-history-item.pinned .chi-pin { color: var(--orange); }
+  .chi-delete:hover { color: #ff5c5c; background: rgba(255,92,92,0.12); }
 
   /* ---------- Mini core (relocated during chat) — free-floating, no box ---------- */
+  #coreHome { will-change: transform; }
   .mini-core-slot {
     display: none;
     flex: 1;
@@ -641,8 +666,8 @@
   <div class="brand"><div class="brand-mark"></div>ATLAS</div>
   <button class="icon-btn" id="micBtn" title="Toggle talking (demo)">●</button>
   <select id="modelSelect" class="connection-select">
-    <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
-    <option value="claude-sonnet-5" selected>Sonnet 5</option>
+    <option value="claude-haiku-4-5-20251001" selected>Haiku 4.5</option>
+    <option value="claude-sonnet-5">Sonnet 5</option>
     <option value="claude-opus-4-8">Opus 4.8</option>
     <option value="claude-fable-5">Fable 5</option>
   </select>
@@ -873,10 +898,6 @@
   let selectedModel = modelSelect.value;
   modelSelect.addEventListener('change', () => { selectedModel = modelSelect.value; });
 
-  // Only the most recent messages get resent to the API each turn — full
-  // history still lives in Supabase, this just keeps the per-message cost bounded.
-  const CHAT_CONTEXT_LIMIT = 20;
-
   function newConversationId() {
     return (crypto.randomUUID && crypto.randomUUID()) || ('conv-' + Date.now() + '-' + Math.random().toString(36).slice(2));
   }
@@ -890,27 +911,57 @@
     return div;
   }
 
+  // FLIP technique: measure before, do the actual (instant) DOM move, measure
+  // after, then fake the animation by starting the element visually at its
+  // old position/size and transitioning to the new one. This is what makes
+  // the reparent-based move glide instead of snap.
+  function animateCoreMove(moveFn) {
+    const first = coreHome.getBoundingClientRect();
+    moveFn();
+    const last = coreHome.getBoundingClientRect();
+
+    const dx = first.left - last.left;
+    const dy = first.top - last.top;
+    const scaleX = first.width / last.width;
+    const scaleY = first.height / last.height;
+
+    coreHome.style.transformOrigin = 'top left';
+    coreHome.style.transition = 'none';
+    coreHome.style.transform = `translate(${dx}px, ${dy}px) scale(${scaleX}, ${scaleY})`;
+
+    coreHome.getBoundingClientRect(); // force reflow so the start position registers
+
+    requestAnimationFrame(() => {
+      coreHome.style.transition = 'transform 0.6s cubic-bezier(0.4, 0, 0.2, 1)';
+      coreHome.style.transform = '';
+    });
+  }
+
   // Moves the spinning core into its free-floating slot under Quick Actions
   // and turns the middle column into the chat transcript. Reversible — tied
   // to whether the chat input actually has focus.
   function activateChatMode() {
     if (chatActive) return;
     chatActive = true;
-    coreSvg.classList.add('core-mini');
-    miniCoreSlot.appendChild(coreHome);
-    miniCoreSlot.style.display = 'flex';
-    coreWrapEl.classList.add('chat-active');
-    chatTranscript.style.display = 'flex';
+    animateCoreMove(() => {
+      coreSvg.classList.add('core-mini');
+      miniCoreSlot.appendChild(coreHome);
+      miniCoreSlot.style.display = 'flex';
+      coreWrapEl.classList.add('chat-active');
+      chatTranscript.style.display = 'flex';
+    });
   }
 
   function deactivateChatMode() {
     if (!chatActive) return;
     chatActive = false;
-    coreSvg.classList.remove('core-mini');
-    coreWrapEl.insertBefore(coreHome, debriefEl);
-    miniCoreSlot.style.display = 'none';
-    coreWrapEl.classList.remove('chat-active');
-    chatTranscript.style.display = 'none';
+    animateCoreMove(() => {
+      coreSvg.classList.remove('core-mini');
+      coreWrapEl.insertBefore(coreHome, debriefEl);
+      miniCoreSlot.style.display = 'none';
+      coreWrapEl.classList.remove('chat-active');
+      chatTranscript.style.display = 'none';
+    });
   }
 
   async function fetchAllMessages() {
@@ -921,6 +972,22 @@
       .limit(500);
     if (error) { console.error('History load error:', error); return []; }
     return data || [];
+  }
+
+  async function fetchConversationMeta() {
+    const { data, error } = await sb.from('claude_conversations').select('id, title, pinned');
+    if (error) { console.error('Conversation meta load error:', error); return {}; }
+    const map = {};
+    (data || []).forEach((r) => { map[r.id] = { title: r.title, pinned: !!r.pinned }; });
+    return map;
+  }
+
+  async function createConversationRecord(id) {
+    try {
+      await sb.from('claude_conversations').insert({ id });
+    } catch (err) {
+      console.error('Conversation record error:', err);
+    }
   }
 
   function groupIntoConversations(rows) {
@@ -935,17 +1002,30 @@
       conv.lastAt = row.created_at;
       if (!conv.label && row.role === 'user') conv.label = row.content.slice(0, 40);
     });
-    return Array.from(map.values()).sort((a, b) => new Date(b.lastAt) - new Date(a.lastAt));
+    return Array.from(map.values());
   }
 
   let cachedConversations = [];
 
   function renderChatHistoryList() {
     chatHistoryListEl.innerHTML = cachedConversations.length
-      ? cachedConversations.map((c) => `<div class="chat-history-item${c.id === currentConversationId ? ' active' : ''}" data-id="${c.id}">${escapeHtml(c.label || 'New chat')}</div>`).join('')
-      : '<div class="chat-history-item" style="cursor:default;">No chats yet</div>';
+      ? cachedConversations.map((c) => `
+        <div class="chat-history-item${c.id === currentConversationId ? ' active' : ''}${c.pinned ? ' pinned' : ''}" data-id="${c.id}">
+          <span class="chi-label">${escapeHtml(c.title || c.label || 'New chat')}</span>
+          <span class="chi-actions">
+            <button class="chi-btn chi-pin" title="${c.pinned ? 'Unpin' : 'Pin'}">${c.pinned ? '★' : '☆'}</button>
+            <button class="chi-btn chi-rename" title="Rename">✎</button>
+            <button class="chi-btn chi-delete" title="Delete">✕</button>
+          </span>
+        </div>`).join('')
+      : '<div class="chat-history-item" style="cursor:default;"><span class="chi-label">No chats yet</span></div>';
+
     chatHistoryListEl.querySelectorAll('.chat-history-item[data-id]').forEach((el) => {
-      el.addEventListener('click', () => { switchConversation(el.dataset.id); askInput.focus(); });
+      const id = el.dataset.id;
+      el.querySelector('.chi-label').addEventListener('click', () => { switchConversation(id); askInput.focus(); });
+      el.querySelector('.chi-pin').addEventListener('click', (e) => { e.stopPropagation(); togglePin(id); });
+      el.querySelector('.chi-rename').addEventListener('click', (e) => { e.stopPropagation(); renameConversation(id); });
+      el.querySelector('.chi-delete').addEventListener('click', (e) => { e.stopPropagation(); deleteConversation(id); });
     });
   }
 
@@ -960,14 +1040,64 @@
     renderChatHistoryList();
   }
 
+  async function togglePin(id) {
+    const conv = cachedConversations.find((c) => c.id === id);
+    if (!conv) return;
+    try {
+      await sb.from('claude_conversations').update({ pinned: !conv.pinned }).eq('id', id);
+    } catch (err) {
+      console.error('Pin toggle error:', err);
+    }
+    refreshConversationList();
+  }
+
+  async function renameConversation(id) {
+    const conv = cachedConversations.find((c) => c.id === id);
+    const name = prompt('Rename chat:', conv ? (conv.title || conv.label || '') : '');
+    if (name === null || !name.trim()) return;
+    try {
+      await sb.from('claude_conversations').update({ title: name.trim() }).eq('id', id);
+    } catch (err) {
+      console.error('Rename error:', err);
+    }
+    refreshConversationList();
+  }
+
+  async function deleteConversation(id) {
+    if (!confirm('Delete this chat permanently? This cannot be undone.')) return;
+    try {
+      await sb.from('claude_chat_messages').delete().eq('conversation_id', id);
+      await sb.from('claude_conversations').delete().eq('id', id);
+    } catch (err) {
+      console.error('Delete conversation error:', err);
+    }
+    if (currentConversationId === id) {
+      currentConversationId = null;
+      claudeChatHistory = [];
+      chatTranscript.innerHTML = '';
+      deactivateChatMode();
+    }
+    refreshConversationList();
+  }
+
   async function refreshConversationList() {
-    const rows = await fetchAllMessages();
-    cachedConversations = groupIntoConversations(rows);
+    const [rows, meta] = await Promise.all([fetchAllMessages(), fetchConversationMeta()]);
+    cachedConversations = groupIntoConversations(rows).map((c) => ({
+      ...c,
+      title: meta[c.id] ? meta[c.id].title : null,
+      pinned: meta[c.id] ? meta[c.id].pinned : false,
+    }));
+    // Pinned chats first, then by most recent activity within each group.
+    cachedConversations.sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+      return new Date(b.lastAt) - new Date(a.lastAt);
+    });
     renderChatHistoryList();
   }
 
   function startNewChat() {
     currentConversationId = newConversationId();
+    createConversationRecord(currentConversationId);
     claudeChatHistory = [];
     chatTranscript.innerHTML = '';
     activateChatMode();
@@ -1010,46 +1140,43 @@
 
   function buildSystemPrompt() {
     if (!memoryFacts.length) return undefined;
-    return 'Known facts about the user carried over from past conversations, regardless of which chat this is:\n' +
+    return 'Pinned facts the user explicitly asked to be remembered:\n' +
       memoryFacts.map((f) => '- ' + f).join('\n');
   }
 
-  // Cheap background call (always Haiku, regardless of the model you're
-  // chatting with) that pulls out anything durable worth remembering
-  // long-term from the exchange that just happened. Fire-and-forget —
-  // never blocks or delays the visible reply.
-  async function extractMemoryFromExchange(userText, assistantText) {
+  // Pulls the most recent messages across EVERY conversation, not just the
+  // current one — this is what makes memory work regardless of which chat
+  // you're in. Bounded on purpose: unbounded history would eventually break
+  // both cost and Claude's actual context window.
+  const GLOBAL_CONTEXT_LIMIT = 40;
+
+  async function fetchGlobalContext() {
     try {
-      const prompt = `From this exchange, list any new durable facts worth remembering about the user long-term (business details, preferences, decisions, names, numbers). Reply with ONLY a JSON array of short plain strings, no markdown, no explanation. If nothing durable, reply with [].\n\nUser: ${userText}\nAssistant: ${assistantText}`;
-      const res = await fetch(CLAUDE_PROXY_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [{ role: 'user', content: prompt }],
-          model: 'claude-haiku-4-5-20251001',
-        }),
-      });
-      const data = await res.json();
-      const raw = (data.reply || '[]').trim();
-      const match = raw.match(/\[[\s\S]*\]/);
-      const facts = match ? JSON.parse(match[0]) : [];
-      for (const fact of facts) {
-        if (typeof fact === 'string' && fact.trim()) await saveMemoryFact(fact);
-      }
+      const { data, error } = await sb
+        .from('claude_chat_messages')
+        .select('role, content, created_at')
+        .order('created_at', { ascending: false })
+        .limit(GLOBAL_CONTEXT_LIMIT);
+      if (error) { console.error('Global context load error:', error); return []; }
+      return (data || []).reverse().map((r) => ({ role: r.role, content: r.content }));
     } catch (err) {
-      console.error('Memory extraction failed:', err);
+      console.error('Global context load failed:', err);
+      return [];
     }
   }
 
   async function sendClaudeMessage(text) {
     text = text.trim();
     if (!text) return;
-    if (!currentConversationId) currentConversationId = newConversationId();
+    if (!currentConversationId) {
+      currentConversationId = newConversationId();
+      createConversationRecord(currentConversationId);
+    }
     activateChatMode();
 
     appendChatBubble('user', text);
 
-    // Explicit override: "remember: ..." stores instantly, no API call, no ambiguity.
+    // Explicit override: "remember: ..." pins something permanently, no API call.
     const rememberMatch = text.match(/^remember:\s*(.+)/i);
     if (rememberMatch) {
       await saveMemoryFact(rememberMatch[1]);
@@ -1058,13 +1185,14 @@
       return;
     }
 
+    const priorGlobalContext = await fetchGlobalContext(); // everything before this message, across every chat
     claudeChatHistory.push({ role: 'user', content: text });
     saveChatMessage('user', text);
 
     const pending = appendChatBubble('assistant', '...');
 
     try {
-      const contextMessages = claudeChatHistory.slice(-CHAT_CONTEXT_LIMIT);
+      const contextMessages = [...priorGlobalContext, { role: 'user', content: text }];
       const res = await fetch(CLAUDE_PROXY_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1075,7 +1203,6 @@
       pending.textContent = reply;
       claudeChatHistory.push({ role: 'assistant', content: reply });
       await saveChatMessage('assistant', reply);
-      extractMemoryFromExchange(text, reply); // fire-and-forget
     } catch (err) {
       pending.textContent = 'Error reaching Claude.';
       console.error('Claude chat error:', err);
