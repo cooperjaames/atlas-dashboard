@@ -120,14 +120,7 @@
     display: flex; align-items: center; justify-content: center;
     position: relative; min-height: 0;
   }
-  .core-label {
-    position: absolute; bottom: 6%; left: 50%; transform: translateX(-50%);
-    font-size: 11px; letter-spacing: 4px; color: var(--white-dim);
-    text-transform: uppercase;
-  }
-  .core-label span { color: var(--orange); }
-
-  svg#core { width: min(58vh, 100%); height: min(58vh, 100%); }
+  svg#core { width: min(74vh, 100%); height: min(74vh, 100%); }
 
   .ring { transform-origin: 200px 200px; }
   .ring-a { animation: spin 18s linear infinite; }
@@ -496,7 +489,6 @@
     min-height: 140px;
   }
   svg#core.core-mini { width: 72%; height: auto; max-width: 260px; }
-  .mini-core-slot .core-label { display: none; }
 
   /* ---------- Chat transcript (takes over the middle column) ---------- */
   .core-wrap.chat-active {
@@ -620,7 +612,6 @@
         </g>
         <g id="particleField"></g>
       </svg>
-      <div class="core-label" id="coreLabelWrap">STATUS: <span id="coreStatus">STANDBY</span></div>
     </div>
 
     <div class="debrief" id="debrief">
@@ -671,7 +662,7 @@
     <option value="claude-opus-4-8">Opus 4.8</option>
     <option value="claude-fable-5">Fable 5</option>
   </select>
-  <input class="ask-input" id="askInput" placeholder="Message Claude..." />
+  <input class="ask-input" id="askInput" placeholder="Message ATLAS..." />
   <div class="bottom-right">
     <span id="bottomTime">--:-- --</span>
     <div class="user-chip"><div class="user-dot">C</div>Cooper</div>
@@ -711,7 +702,6 @@
   // Talking simulation — click mic to toggle
   const micBtn = document.getElementById('micBtn');
   const pulseCore = document.getElementById('pulseCore');
-  const coreStatus = document.getElementById('coreStatus');
   const waveBars = document.getElementById('waveBars');
   let talking = false;
   let waveInterval = null;
@@ -735,7 +725,6 @@
     talking = state;
     document.body.classList.toggle('talking', talking);
     micBtn.classList.toggle('active', talking);
-    coreStatus.textContent = talking ? 'LISTENING' : 'STANDBY';
 
     if (talking) {
       waveInterval = setInterval(() => {
