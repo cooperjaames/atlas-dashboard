@@ -40,15 +40,14 @@
     gap: 14px;
     position: relative;
   }
-  /* soft vignette + faint scanlines over everything, for depth */
+  /* soft vignette for depth — plain radial-gradient, no blend-mode and no fine
+     repeating pattern, since a full-viewport mix-blend-mode:multiply layer
+     forces the browser to recomposite the entire page on every animation
+     frame underneath it. That was the single biggest source of jank. */
   body::after {
     content: "";
     position: fixed; inset: 0; pointer-events: none; z-index: 40;
-    background:
-      repeating-linear-gradient(0deg, rgba(0,0,0,0.09) 0px, rgba(0,0,0,0.09) 1px, transparent 1px, transparent 3px),
-      radial-gradient(circle at 50% 50%, transparent 55%, rgba(0,0,0,0.55) 100%);
-    mix-blend-mode: multiply;
-    opacity: 0.5;
+    background: radial-gradient(circle at 50% 50%, transparent 60%, rgba(0,0,0,0.45) 100%);
   }
 
   /* ---------- Top grid ---------- */
@@ -151,22 +150,20 @@
   .core-wrap {
     display: flex; align-items: center; justify-content: center;
     position: relative; min-height: 0;
-    perspective: 1400px;
   }
   svg#core {
     width: min(74vh, 100%); height: min(74vh, 100%);
-    transform-style: preserve-3d;
-    animation: core-tilt 10s ease-in-out infinite;
-    will-change: transform;
+    position: relative; z-index: 1;
   }
-  @keyframes core-tilt {
-    0%   { transform: rotateX(9deg)  rotateY(-10deg) rotateZ(0deg); }
-    25%  { transform: rotateX(-7deg) rotateY(12deg)  rotateZ(1.5deg); }
-    50%  { transform: rotateX(11deg) rotateY(6deg)   rotateZ(-1deg); }
-    75%  { transform: rotateX(-9deg) rotateY(-11deg) rotateZ(1deg); }
-    100% { transform: rotateX(9deg)  rotateY(-10deg) rotateZ(0deg); }
+  /* the orb itself is drawn on canvas (see #orbCanvas below) — cheap to animate
+     at 60fps since it's one raster surface instead of ~150 individually
+     filtered/transitioned DOM elements */
+  #orbCanvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    z-index: 2;
+    cursor: pointer;
   }
-  body.talking svg#core { animation-duration: 3.2s; }
 
   .ring { transform-origin: 200px 200px; }
   .ring-a { animation: spin 7s linear infinite; }
@@ -201,8 +198,8 @@
     filter: drop-shadow(0 0 10px var(--orange)) drop-shadow(0 0 22px var(--orange-glow));
   }
 
-  /* invisible hit target over the core center — click opens the fullscreen chat */
-  .core-center-hit { fill: transparent; cursor: pointer; }
+  /* core-hover class is toggled from the canvas's own mousemove/click handling
+     (clicking near the center of the orb opens the fullscreen chat) */
   .core-hover-label {
     fill: var(--cyan);
     font-size: 9px;
@@ -237,35 +234,6 @@
   .rings-group.shrink {
     transform: translateY(46px) scale(0.78);
     opacity: 0.18;
-  }
-
-  /* ---------- Particle field (data cluster) ---------- */
-  .particle-shape {
-    transform-origin: 0px 0px;
-    transition: transform 0.12s linear, opacity 0.35s ease, fill 0.3s ease;
-    opacity: 0.5;
-  }
-  .particle-shape .fig {
-    fill: var(--orange-dim);
-    filter: drop-shadow(0 0 2px rgba(255,122,26,0.5));
-  }
-  .particle-shape.linked .fig { fill: var(--orange); opacity: 0.9; filter: drop-shadow(0 0 4px var(--orange-glow)); }
-  .particle-shape.linked { cursor: pointer; opacity: 0.9; }
-  .particle-shape.linked:hover .fig { filter: drop-shadow(0 0 8px var(--orange)); }
-  .particle-shape.dimmed { opacity: 0.05; }
-  .particle-shape.selected {
-    opacity: 1;
-    transition: transform 0.5s cubic-bezier(.4,0,.2,1), opacity 0.3s ease;
-  }
-  .particle-shape.selected .fig {
-    fill: var(--orange);
-    filter: drop-shadow(0 0 10px var(--orange)) drop-shadow(0 0 24px var(--orange));
-  }
-
-  /* faint web of lines linking nearby particles — gives the sphere its "network" read */
-  #particleLines line {
-    stroke: var(--orange);
-    stroke-width: 0.6;
   }
 
   /* ---------- HUD stat overlay (top-left of core) ---------- */
@@ -800,15 +768,6 @@
         <div class="hud-status"><span class="dot"></span><span id="hudSim">SIM STABLE</span></div>
       </div>
       <svg id="core" viewBox="0 0 400 400">
-        <defs>
-          <filter id="bloomFilter" x="-60%" y="-60%" width="220%" height="220%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="3.2" result="blur"/>
-            <feMerge>
-              <feMergeNode in="blur"/>
-              <feMergeNode in="SourceGraphic"/>
-            </feMerge>
-          </filter>
-        </defs>
         <g id="ringsGroup" class="rings-group">
           <circle class="core-halo" cx="200" cy="200" r="96"/>
           <g class="ring ring-c">
@@ -830,12 +789,10 @@
           <circle class="core-center" cx="200" cy="200" r="92"/>
           <circle class="pulse-core" id="pulseCore" cx="200" cy="200" r="14"/>
           <g id="waveBars" stroke="var(--orange)" stroke-width="4" stroke-linecap="round" opacity="0.9"></g>
-          <circle class="core-center-hit" id="coreCenterHit" cx="200" cy="200" r="90"/>
           <text class="core-hover-label" x="200" y="252">Tap to chat</text>
         </g>
-        <g id="particleLines" filter="url(#bloomFilter)"></g>
-        <g id="particleField"></g>
       </svg>
+      <canvas id="orbCanvas"></canvas>
     </div>
 
     <div class="debrief" id="debrief">
@@ -999,10 +956,15 @@
 
   micBtn.addEventListener('click', () => setTalking(!talking));
 
-  /* ================= Particle field / task system ================= */
-  // "Particles" are the small unlabeled shapes packed inside the core.
-  // A subset gets silently bound to a real task when that task is created.
-  const particleField = document.getElementById('particleField');
+  /* ================= Particle orb / task system (canvas-based) ================= */
+  // The orb used to be ~150 individually-filtered, individually-transitioned
+  // SVG elements plus an SVG feGaussianBlur filter recomputed on every frame —
+  // that combination is what made it laggy. It's now one <canvas>, drawn as a
+  // genuine rotating 3D point-sphere (not a flat 2D orbit): cheap per-particle
+  // trig instead of DOM writes, and no per-element CSS/SVG filters at all.
+  const orbCanvas = document.getElementById('orbCanvas');
+  const orbCtx = orbCanvas.getContext('2d');
+  const coreSvg = document.getElementById('core');
   const ringsGroup = document.getElementById('ringsGroup');
   const debriefEl = document.getElementById('debrief');
   const debriefTitle = document.getElementById('debriefTitle');
@@ -1012,33 +974,27 @@
   const now = Date.now();
   const hr = 3600 * 1000;
 
-  const SHAPE_TYPES = ['circle'];
-  const PARTICLE_COUNT = 150;
+  const PARTICLE_COUNT = 180;
   const CENTER = 200;
-  const MIN_R = 22;   // keep clear of the pulse core
-  const MAX_R = 82;   // stay inside the black core disc (r=92)
-  const MAX_PARTICLE_SIZE = 10; // main pulse dot is r=14 idle, up to ~24 talking — stay under both
+  const ORB_R = 78;        // sphere radius, logical units (same 0-400 space the rings use)
+  const CORE_HIT_R = 92;   // click within this radius (and not on a node) opens chat
+  const FOCAL = 240;       // perspective strength
 
   let particles = [];
   let tasks = [];
   let selectedTaskId = null;
+  let selEase = 0, dimEase = 0; // smoothed 0→1 transition for the focus/dim effect
 
   function makeParticle(i) {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = MIN_R + Math.random() * (MAX_R - MIN_R);
-    const sizeBase = 3 + Math.random() * 4;              // 3–7
-    const sizeAmp = Math.min(2.5, MAX_PARTICLE_SIZE - sizeBase - 0.5);
     return {
       id: 'p' + i,
       taskId: null,
-      dist,
-      angle,
-      angularSpeed: (0.08 + Math.random() * 0.35) * (Math.random() < 0.5 ? -1 : 1), // rad/s, mixed CW/CCW
-      sizeBase,
-      sizeAmp: Math.max(0.6, sizeAmp),
-      sizePhase: Math.random() * Math.PI * 2,
-      sizeSpeed: 0.4 + Math.random() * 0.8,
-      gEl: null, circleEl: null,
+      theta: Math.random() * Math.PI * 2,
+      phi: Math.acos(2 * Math.random() - 1),   // uniform distribution over a sphere
+      r: ORB_R * (0.7 + Math.random() * 0.3),
+      drift: (Math.random() < 0.5 ? -1 : 1) * (0.03 + Math.random() * 0.06),
+      sizeBase: 1.5 + Math.random() * 2,
+      sx: CENTER, sy: CENTER, sScale: 1, z: 0, drawSize: 2, isSelected: false,
     };
   }
 
@@ -1046,121 +1002,6 @@
     for (let i = 0; i < PARTICLE_COUNT; i++) particles.push(makeParticle(i));
   }
   seedParticles();
-
-  function buildParticleDOM(p) {
-    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    g.setAttribute('class', 'particle-shape');
-    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    circle.setAttribute('class', 'fig');
-    circle.setAttribute('r', p.sizeBase);
-    g.appendChild(circle);
-    particleField.appendChild(g);
-    p.gEl = g; p.circleEl = circle;
-  }
-
-  function renderParticles() {
-    // build DOM once per particle, then just toggle classes/transform on selection changes
-    particles.forEach(p => {
-      if (!p.gEl) buildParticleDOM(p);
-      let cls = 'particle-shape';
-      if (p.taskId) cls += ' linked';
-      if (selectedTaskId && p.taskId === selectedTaskId) cls += ' selected';
-      else if (selectedTaskId) cls += ' dimmed';
-      p.gEl.setAttribute('class', cls);
-
-      if (selectedTaskId && p.taskId === selectedTaskId) {
-        p.gEl.setAttribute('transform', `translate(${CENTER},${CENTER}) scale(${68 / p.sizeBase})`);
-      }
-      if (p.taskId && !p.gEl.dataset.bound) {
-        p.gEl.addEventListener('click', () => selectTask(p.taskId));
-        p.gEl.dataset.bound = '1';
-      }
-    });
-  }
-  renderParticles();
-
-  /* ---------- Particle web (connecting lines) + HUD stats ---------- */
-  const particleLinesEl = document.getElementById('particleLines');
-  const hudNodesEl = document.getElementById('hudNodes');
-  const hudLinkedEl = document.getElementById('hudLinked');
-  const hudLinesEl = document.getElementById('hudLines');
-  const hudFpsEl = document.getElementById('hudFps');
-  const hudSimEl = document.getElementById('hudSim');
-  const LINK_DIST = 30; // only nearby particles get webbed together
-  let linePool = [];
-
-  function getLine(i) {
-    if (linePool[i]) return linePool[i];
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    particleLinesEl.appendChild(line);
-    linePool[i] = line;
-    return line;
-  }
-
-  function updateParticleWeb() {
-    let used = 0;
-    for (let i = 0; i < particles.length; i++) {
-      const a = particles[i];
-      if (a.x === undefined) continue;
-      for (let j = i + 1; j < particles.length; j++) {
-        const b = particles[j];
-        if (b.x === undefined) continue;
-        const dx = a.x - b.x, dy = a.y - b.y;
-        const d = Math.sqrt(dx * dx + dy * dy);
-        if (d < LINK_DIST) {
-          const line = getLine(used++);
-          line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
-          line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
-          line.style.opacity = Math.max(0, 0.28 * (1 - d / LINK_DIST));
-          line.style.display = '';
-        }
-      }
-    }
-    // hide leftover pooled lines from a previous, denser frame
-    for (let k = used; k < linePool.length; k++) linePool[k].style.display = 'none';
-    hudLinesEl.textContent = used;
-  }
-
-  // Continuous ambient motion — orbit + gentle size breathing, skipped for the
-  // currently-expanded particle since that one is pinned center via CSS transition.
-  let lastFrame = performance.now();
-  let webFrameCounter = 0;
-  let fpsSamples = [];
-  function animateParticles(t) {
-    const dt = Math.min(0.05, (t - lastFrame) / 1000);
-    const instFps = dt > 0 ? 1 / dt : 0;
-    lastFrame = t;
-
-    fpsSamples.push(instFps);
-    if (fpsSamples.length > 30) fpsSamples.shift();
-
-    particles.forEach(p => {
-      if (selectedTaskId && p.taskId === selectedTaskId) { p.x = p.y = undefined; return; } // pinned to center, don't fight the CSS transition; excluded from the web
-      p.angle += p.angularSpeed * dt;
-      const x = CENTER + Math.cos(p.angle) * p.dist;
-      const y = CENTER + Math.sin(p.angle) * p.dist;
-      const size = Math.max(1.2, p.sizeBase + Math.sin(t / 1000 * p.sizeSpeed + p.sizePhase) * p.sizeAmp);
-      if (p.gEl) p.gEl.setAttribute('transform', `translate(${x},${y})`);
-      if (p.circleEl) p.circleEl.setAttribute('r', size);
-      p.x = x; p.y = y;
-    });
-
-    // webbing is O(n^2) — throttle it to every 3rd frame, plenty smooth at this particle count
-    webFrameCounter++;
-    if (webFrameCounter % 3 === 0) updateParticleWeb();
-
-    requestAnimationFrame(animateParticles);
-  }
-  requestAnimationFrame(animateParticles);
-
-  function updateHudStats() {
-    hudNodesEl.textContent = particles.length;
-    hudLinkedEl.textContent = particles.filter(p => p.taskId).length;
-    const avgFps = fpsSamples.length ? fpsSamples.reduce((a, b) => a + b, 0) / fpsSamples.length : 0;
-    hudFpsEl.textContent = Math.round(avgFps);
-    hudSimEl.textContent = selectedTaskId ? 'TASK FOCUS' : 'SIM STABLE';
-  }
-  setInterval(updateHudStats, 500);
 
   function claimParticle(taskId) {
     let free = particles.filter(p => !p.taskId);
@@ -1173,6 +1014,188 @@
     chosen.taskId = taskId;
     return chosen;
   }
+
+  // The canvas loop reads selectedTaskId/particles state fresh every frame, so
+  // there's nothing to imperatively re-render — kept as a no-op so every existing
+  // call site (selectTask, closeDebrief, addTask, loadTasksFromDB) still works.
+  function renderParticles() {}
+
+  function resizeCanvas() {
+    const rect = orbCanvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    orbCanvas.width = Math.round(rect.width * dpr);
+    orbCanvas.height = Math.round(rect.height * dpr);
+    orbCtx.setTransform(orbCanvas.width / 400, 0, 0, orbCanvas.height / 400, 0, 0);
+  }
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+
+  let rotY = 0;
+  const ORB_ROT_SPEED = 0.22; // rad/s
+
+  function project(p, rotXTilt) {
+    const theta = p.theta + rotY;
+    const x = p.r * Math.sin(p.phi) * Math.cos(theta);
+    const zRaw = p.r * Math.sin(p.phi) * Math.sin(theta);
+    const y0 = p.r * Math.cos(p.phi);
+    const y = y0 * Math.cos(rotXTilt) - zRaw * Math.sin(rotXTilt);
+    const z = y0 * Math.sin(rotXTilt) + zRaw * Math.cos(rotXTilt);
+    const scale = FOCAL / (FOCAL + z);
+    return { x: CENTER + x * scale, y: CENTER + y * scale, scale, z };
+  }
+
+  let cachedLinks = []; // refreshed every 3rd frame for the connecting web
+
+  function drawOrb(t, dt) {
+    orbCtx.clearRect(0, 0, 400, 400);
+
+    const talkBoost = talking ? 2.4 : 1;
+    rotY += ORB_ROT_SPEED * talkBoost * dt;
+    const rotXTilt = 0.22 + Math.sin(t / 4000) * 0.08; // slow gentle wobble, not a full 3D CSS transform
+
+    const target = selectedTaskId ? 1 : 0;
+    selEase += (target - selEase) * Math.min(1, dt * 5);
+    dimEase += (target - dimEase) * Math.min(1, dt * 5);
+
+    particles.forEach(p => {
+      p.theta += p.drift * dt;
+      const proj = project(p, rotXTilt);
+      p.z = proj.z;
+      p.isSelected = !!(p.taskId && p.taskId === selectedTaskId);
+      const focusT = p.isSelected ? selEase : 0;
+      p.sx = proj.x + (CENTER - proj.x) * focusT;
+      p.sy = proj.y + (CENTER - proj.y) * focusT;
+      p.sScale = proj.scale + (1 - proj.scale) * focusT;
+      p.drawSize = (p.sizeBase * proj.scale) + (30 - p.sizeBase * proj.scale) * focusT;
+    });
+
+    const drawOrder = particles.slice().sort((a, b) => a.z - b.z);
+
+    // webbing is checked every 3rd frame — the shape barely changes frame to
+    // frame, no reason to pay for it 60x/sec even though canvas math is cheap
+    webFrameCounter++;
+    if (webFrameCounter % 3 === 0) {
+      const links = [];
+      const LINK_DIST = 26;
+      for (let i = 0; i < drawOrder.length; i++) {
+        const a = drawOrder[i];
+        if (a.isSelected || dimEase > 0.7) continue;
+        for (let j = i + 1; j < drawOrder.length; j++) {
+          const b = drawOrder[j];
+          if (b.isSelected) continue;
+          const dx = a.sx - b.sx, dy = a.sy - b.sy;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < LINK_DIST * LINK_DIST) {
+            const d = Math.sqrt(d2);
+            links.push([a.sx, a.sy, b.sx, b.sy, 0.22 * (1 - d / LINK_DIST)]);
+          }
+        }
+      }
+      cachedLinks = links;
+    }
+
+    // additive blending gives a cheap "glow cloud" look from overlapping dots
+    // without a single blur filter anywhere in the loop
+    orbCtx.globalCompositeOperation = 'lighter';
+
+    orbCtx.strokeStyle = 'rgba(255,122,26,1)';
+    orbCtx.lineWidth = 0.6;
+    cachedLinks.forEach(([x1, y1, x2, y2, a]) => {
+      orbCtx.globalAlpha = Math.max(0, a) * (1 - dimEase);
+      orbCtx.beginPath();
+      orbCtx.moveTo(x1, y1);
+      orbCtx.lineTo(x2, y2);
+      orbCtx.stroke();
+    });
+
+    drawOrder.forEach(p => {
+      const linked = !!p.taskId;
+      let alpha;
+      if (p.isSelected) alpha = 1;
+      else if (linked) alpha = 0.9 * (1 - dimEase * 0.85);
+      else alpha = (0.32 + p.sScale * 0.25) * (1 - dimEase * 0.95);
+      orbCtx.globalAlpha = Math.max(0, Math.min(1, alpha));
+      orbCtx.fillStyle = linked || p.isSelected ? '#ff7a1a' : '#b8560f';
+
+      // real shadowBlur only for the handful of linked/selected nodes — cheap
+      // at that count, would not have been cheap across all ~180 particles
+      if (p.isSelected) { orbCtx.shadowColor = '#ff7a1a'; orbCtx.shadowBlur = 24; }
+      else if (linked) { orbCtx.shadowColor = 'rgba(255,122,26,0.6)'; orbCtx.shadowBlur = 8; }
+      else { orbCtx.shadowBlur = 0; }
+
+      orbCtx.beginPath();
+      orbCtx.arc(p.sx, p.sy, Math.max(0.6, p.drawSize), 0, Math.PI * 2);
+      orbCtx.fill();
+    });
+
+    orbCtx.shadowBlur = 0;
+    orbCtx.globalAlpha = 1;
+    orbCtx.globalCompositeOperation = 'source-over';
+  }
+
+  let lastFrame = performance.now();
+  let webFrameCounter = 0;
+  let fpsSamples = [];
+  function animateParticles(t) {
+    const dt = Math.min(0.05, (t - lastFrame) / 1000);
+    const instFps = dt > 0 ? 1 / dt : 0;
+    lastFrame = t;
+    fpsSamples.push(instFps);
+    if (fpsSamples.length > 30) fpsSamples.shift();
+
+    drawOrb(t, dt);
+
+    requestAnimationFrame(animateParticles);
+  }
+  requestAnimationFrame(animateParticles);
+
+  /* ---------- HUD stats ---------- */
+  const hudNodesEl = document.getElementById('hudNodes');
+  const hudLinkedEl = document.getElementById('hudLinked');
+  const hudLinesEl = document.getElementById('hudLines');
+  const hudFpsEl = document.getElementById('hudFps');
+  const hudSimEl = document.getElementById('hudSim');
+
+  function updateHudStats() {
+    hudNodesEl.textContent = particles.length;
+    hudLinkedEl.textContent = particles.filter(p => p.taskId).length;
+    hudLinesEl.textContent = cachedLinks.length;
+    const avgFps = fpsSamples.length ? fpsSamples.reduce((a, b) => a + b, 0) / fpsSamples.length : 0;
+    hudFpsEl.textContent = Math.round(avgFps);
+    hudSimEl.textContent = selectedTaskId ? 'TASK FOCUS' : 'SIM STABLE';
+  }
+  setInterval(updateHudStats, 500);
+
+  /* ---------- canvas interaction ---------- */
+  // click a linked node -> select its task; click empty center space -> open chat
+  function canvasLogicalPoint(evt) {
+    const rect = orbCanvas.getBoundingClientRect();
+    return {
+      x: ((evt.clientX - rect.left) / rect.width) * 400,
+      y: ((evt.clientY - rect.top) / rect.height) * 400,
+    };
+  }
+  function hitParticle(lx, ly) {
+    let best = null, bestD = 12; // logical-unit hit radius, generous for touch
+    particles.forEach(p => {
+      if (!p.taskId) return;
+      const d = Math.hypot(p.sx - lx, p.sy - ly);
+      if (d < bestD) { bestD = d; best = p; }
+    });
+    return best;
+  }
+  orbCanvas.addEventListener('click', (e) => {
+    const { x, y } = canvasLogicalPoint(e);
+    const hit = hitParticle(x, y);
+    if (hit) { selectTask(hit.taskId); return; }
+    if (Math.hypot(x - CENTER, y - CENTER) < CORE_HIT_R) openChatOverlay();
+  });
+  orbCanvas.addEventListener('mousemove', (e) => {
+    const { x, y } = canvasLogicalPoint(e);
+    const overCore = !hitParticle(x, y) && Math.hypot(x - CENTER, y - CENTER) < CORE_HIT_R;
+    coreSvg.classList.toggle('core-hover', overCore);
+  });
+  orbCanvas.addEventListener('mouseleave', () => coreSvg.classList.remove('core-hover'));
 
   function recentLogs(task) {
     const cutoff = Date.now() - 24 * hr;
@@ -1190,8 +1213,6 @@
   }
 
   const CLAUDE_PROXY_URL = 'https://lively-compassion-production-8818.up.railway.app/chat';
-  const coreSvg = document.getElementById('core');
-  const coreCenterHit = document.getElementById('coreCenterHit');
   const chatTranscript = document.getElementById('chatTranscript');
   const modelSelect = document.getElementById('modelSelect');
   const chatHistoryListEl = document.getElementById('chatHistoryList');
@@ -1221,11 +1242,6 @@
     return div;
   }
 
-  // Core hover glow — invites the click that opens chat.
-  coreCenterHit.addEventListener('mouseenter', () => coreSvg.classList.add('core-hover'));
-  coreCenterHit.addEventListener('mouseleave', () => coreSvg.classList.remove('core-hover'));
-  coreCenterHit.addEventListener('click', () => openChatOverlay());
-
   // A quick expanding flash at the click point, timed with the zoom-in.
   function triggerFlash(x, y) {
     chatFlash.style.left = x + 'px';
@@ -1241,7 +1257,7 @@
   function openChatOverlay() {
     if (chatActive) return;
     chatActive = true;
-    const rect = coreCenterHit.getBoundingClientRect();
+    const rect = orbCanvas.getBoundingClientRect();
     const ox = rect.left + rect.width / 2;
     const oy = rect.top + rect.height / 2;
     const maxR = Math.hypot(Math.max(ox, window.innerWidth - ox), Math.max(oy, window.innerHeight - oy));
@@ -1270,7 +1286,7 @@
     chatInputBar.classList.remove('show');
     chatHistoryDrawer.classList.remove('open');
 
-    const rect = coreCenterHit.getBoundingClientRect();
+    const rect = orbCanvas.getBoundingClientRect();
     const ox = rect.left + rect.width / 2;
     const oy = rect.top + rect.height / 2;
     const maxR = Math.hypot(Math.max(ox, window.innerWidth - ox), Math.max(oy, window.innerHeight - oy));
