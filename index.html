@@ -397,7 +397,7 @@
     <div class="panel profit-bar">
       <div class="panel-title"><span class="dot"></span>This Month</div>
 
-      <div class="profit-today-line"><span class="label">Revenue:</span> <span class="amount" id="revenueTotal">$0.00</span></div>
+      <div class="profit-today-line"><span class="label" id="revenueLabel">Revenue:</span> <span class="amount" id="revenueTotal">$0.00</span></div>
 
       <div class="profit-monthly-amount" id="profitTotal">$0.00</div>
       <div class="profit-today-line"><span class="label">Today:</span> <span class="amount" id="profitTodayVal">$0.00</span></div>
@@ -801,6 +801,7 @@
   // Shopify sync job writing into Supabase.
   const profitTotalEl = document.getElementById('profitTotal');
   const revenueTotalEl = document.getElementById('revenueTotal');
+  const revenueLabelEl = document.getElementById('revenueLabel');
   const profitTodayValEl = document.getElementById('profitTodayVal');
   const profitBreakdownEl = document.getElementById('profitBreakdown');
 
@@ -824,26 +825,44 @@
       .select('day, amount, breakdown, revenue')
       .gte('day', start)
       .lt('day', end);
-    if (error) { console.error('Profit load error:', error); return { days: {}, storeTotals: {}, revenue: 0 }; }
+    if (error) { console.error('Profit load error:', error); return { days: {}, storeTotals: {}, revenue: 0, revenueByDay: {} }; }
     const days = {};
+    const revenueByDay = {};
     const storeTotals = {};
     let revenue = 0;
     data.forEach(row => {
       days[row.day] = Number(row.amount);
+      revenueByDay[row.day] = Number(row.revenue || 0);
       revenue += Number(row.revenue || 0);
       const breakdown = row.breakdown || {};
       Object.entries(breakdown).forEach(([store, amt]) => {
         storeTotals[store] = (storeTotals[store] || 0) + Number(amt);
       });
     });
-    return { days, storeTotals, revenue };
+    return { days, storeTotals, revenue, revenueByDay };
+  }
+
+  let latestData = null;
+  let showingDailyRevenue = false;
+
+  function renderRevenue() {
+    if (!latestData) return;
+    if (showingDailyRevenue) {
+      const todayRevenue = latestData.revenueByDay[dayKey()] || 0;
+      revenueLabelEl.textContent = "Today's Revenue:";
+      revenueTotalEl.textContent = '$' + todayRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    } else {
+      revenueLabelEl.textContent = 'Revenue:';
+      revenueTotalEl.textContent = '$' + latestData.revenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
   }
 
   function renderProfit(data) {
+    latestData = data;
     const values = Object.values(data.days);
     const total = values.reduce((sum, v) => sum + v, 0);
     profitTotalEl.textContent = '$' + total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    revenueTotalEl.textContent = '$' + data.revenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    renderRevenue();
 
     const today = data.days[dayKey()] || 0;
     profitTodayValEl.textContent = '$' + today.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -860,6 +879,8 @@
 
   profitTotalEl.addEventListener('click', () => {
     profitBreakdownEl.classList.toggle('open');
+    showingDailyRevenue = profitBreakdownEl.classList.contains('open');
+    renderRevenue();
   });
 
   // Live updates — no refresh needed. Whenever the sync job (or anything else)
