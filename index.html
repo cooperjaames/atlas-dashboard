@@ -267,52 +267,44 @@
     text-shadow: 0 0 22px var(--orange-glow);
     letter-spacing: 1px;
     line-height: 1.1;
-  }
-  .profit-monthly-sub {
-    font-size: 10px; color: var(--white-dim); letter-spacing: 1px;
-    text-transform: uppercase; margin-bottom: 10px;
-  }
-
-  .profit-daily {
-    display: flex; align-items: baseline; gap: 8px;
-    padding-top: 8px;
-    border-top: 1px solid rgba(255,122,26,0.15);
-    width: 100%;
-    justify-content: center;
-  }
-  .profit-daily-label {
-    font-size: 10px; color: var(--white-dim); letter-spacing: 1.5px;
-    text-transform: uppercase;
-  }
-  .profit-daily-amount { font-size: 20px; font-weight: bold; color: var(--white); }
-  .profit-daily-amount.unlogged { color: var(--white-dim); font-style: italic; font-weight: normal; font-size: 14px; }
-
-  .profit-log { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
-  .profit-log input {
-    width: 110px;
-    background: rgba(255,122,26,0.06);
-    border: 1px solid rgba(255,122,26,0.25);
-    border-radius: 6px;
-    padding: 7px 10px;
-    color: var(--white);
-    font-family: inherit;
-    font-size: 12px;
-    text-align: center;
-  }
-  .profit-log input:focus { outline: none; border-color: var(--orange); }
-  .profit-log button {
-    background: rgba(255,122,26,0.12);
-    border: 1px solid var(--orange);
-    color: var(--orange);
-    padding: 7px 14px;
-    border-radius: 6px;
-    font-size: 11px;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
     cursor: pointer;
-    font-family: inherit;
+    transition: text-shadow 0.2s;
   }
-  .profit-log button:hover { background: rgba(255,122,26,0.25); }
+  .profit-monthly-amount:hover { text-shadow: 0 0 32px var(--orange); }
+  .profit-monthly-amount::after {
+    content: '▾';
+    font-size: 0.35em;
+    margin-left: 8px;
+    color: var(--white-dim);
+    vertical-align: middle;
+  }
+
+  .profit-today-line {
+    font-size: 11px;
+    color: var(--white);
+    letter-spacing: 0.5px;
+    margin-top: 6px;
+  }
+  .profit-today-line .label { color: var(--white); }
+  .profit-today-line .amount { color: var(--white); font-weight: bold; }
+
+  .profit-breakdown {
+    width: 100%;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease, opacity 0.25s ease, margin 0.3s ease;
+    opacity: 0;
+    margin-top: 0;
+  }
+  .profit-breakdown.open { max-height: 220px; opacity: 1; margin-top: 4px; }
+  .breakdown-row {
+    display: flex; justify-content: space-between;
+    font-size: 11.5px; padding: 5px 4px;
+    border-bottom: 1px solid rgba(255,122,26,0.08);
+  }
+  .breakdown-row:last-child { border-bottom: none; }
+  .breakdown-row .store-name { color: var(--white-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+  .breakdown-row .store-amount { color: var(--orange); font-weight: bold; }
 
   /* ---------- Bottom bar ---------- */
   .bottom {
@@ -407,17 +399,9 @@
 
       <div class="profit-monthly-label">This Month</div>
       <div class="profit-monthly-amount" id="profitTotal">$0.00</div>
-      <div class="profit-monthly-sub" id="profitSub">0 days logged</div>
+      <div class="profit-today-line"><span class="label">Today:</span> <span class="amount" id="profitTodayVal">$0.00</span></div>
 
-      <div class="profit-daily">
-        <span class="profit-daily-label">Today</span>
-        <span class="profit-daily-amount unlogged" id="profitTodayVal">Not logged yet</span>
-      </div>
-
-      <div class="profit-log">
-        <input type="number" step="0.01" id="profitInput" placeholder="Today's profit" />
-        <button id="profitLogBtn">Log</button>
-      </div>
+      <div class="profit-breakdown" id="profitBreakdown"></div>
     </div>
 
     <svg id="core" viewBox="0 0 400 400">
@@ -809,14 +793,14 @@
   });
 
   /* ================= Profit tracker (Supabase-backed) ================= */
-  // profit_entries: { day (date, unique), amount (numeric) }
+  // profit_entries: { day (date, unique), amount (numeric), breakdown (jsonb: {storeName: amount}) }
   // "Refreshing on the 1st" just falls out of filtering by current month —
   // nothing to manually reset, old months' rows just stay in the table.
+  // Fully automated now — no manual entry. Data comes entirely from the
+  // Shopify sync job writing into Supabase.
   const profitTotalEl = document.getElementById('profitTotal');
-  const profitSubEl = document.getElementById('profitSub');
   const profitTodayValEl = document.getElementById('profitTodayVal');
-  const profitInput = document.getElementById('profitInput');
-  const profitLogBtn = document.getElementById('profitLogBtn');
+  const profitBreakdownEl = document.getElementById('profitBreakdown');
 
   function dayKey(d = new Date()) {
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -835,47 +819,43 @@
     const { start, end } = monthBounds();
     const { data, error } = await sb
       .from('profit_entries')
-      .select('day, amount')
+      .select('day, amount, breakdown')
       .gte('day', start)
       .lt('day', end);
-    if (error) { console.error('Profit load error:', error); return { days: {} }; }
+    if (error) { console.error('Profit load error:', error); return { days: {}, storeTotals: {} }; }
     const days = {};
-    data.forEach(row => { days[row.day] = Number(row.amount); });
-    return { days };
-  }
-
-  async function saveDayAmount(amount) {
-    const { error } = await sb
-      .from('profit_entries')
-      .upsert({ day: dayKey(), amount }, { onConflict: 'day' });
-    if (error) console.error('Profit save error:', error);
+    const storeTotals = {};
+    data.forEach(row => {
+      days[row.day] = Number(row.amount);
+      const breakdown = row.breakdown || {};
+      Object.entries(breakdown).forEach(([store, amt]) => {
+        storeTotals[store] = (storeTotals[store] || 0) + Number(amt);
+      });
+    });
+    return { days, storeTotals };
   }
 
   function renderProfit(data) {
     const values = Object.values(data.days);
     const total = values.reduce((sum, v) => sum + v, 0);
     profitTotalEl.textContent = '$' + total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    profitSubEl.textContent = `${monthLabel()} · ${values.length} day${values.length === 1 ? '' : 's'} logged`;
 
-    const today = data.days[dayKey()];
-    if (today !== undefined) {
-      profitTodayValEl.textContent = '$' + today.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      profitTodayValEl.classList.remove('unlogged');
-      profitInput.value = today;
-    } else {
-      profitTodayValEl.textContent = 'Not logged yet';
-      profitTodayValEl.classList.add('unlogged');
-    }
+    const today = data.days[dayKey()] || 0;
+    profitTodayValEl.textContent = '$' + today.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    const stores = Object.entries(data.storeTotals).sort((a, b) => b[1] - a[1]);
+    profitBreakdownEl.innerHTML = stores.length
+      ? stores.map(([name, amt]) => `
+          <div class="breakdown-row">
+            <span class="store-name">${name}</span>
+            <span class="store-amount">$${amt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          </div>`).join('')
+      : '<div class="breakdown-row"><span class="store-name">No data yet</span></div>';
   }
 
-  async function logTodayProfit() {
-    const val = parseFloat(profitInput.value);
-    if (isNaN(val)) return;
-    await saveDayAmount(val);
-    renderProfit(await loadMonthData());
-  }
-  profitLogBtn.addEventListener('click', logTodayProfit);
-  profitInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') logTodayProfit(); });
+  profitTotalEl.addEventListener('click', () => {
+    profitBreakdownEl.classList.toggle('open');
+  });
 
   loadMonthData().then(renderProfit);
 </script>
