@@ -430,30 +430,67 @@
   .user-chip { display: flex; align-items: center; gap: 6px; }
   .user-dot { width: 20px; height: 20px; border-radius: 50%; background: var(--orange-dim); display:flex; align-items:center; justify-content:center; font-size:10px; color: var(--black); font-weight:bold; }
 
-  /* ---------- Mini core (relocated during chat) ---------- */
+  /* ---------- Chat history (left column) ---------- */
+  .chat-history-panel { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .new-chat-btn {
+    margin-left: auto;
+    background: rgba(255,122,26,0.12);
+    border: 1px solid var(--orange);
+    color: var(--orange);
+    width: 20px; height: 20px;
+    border-radius: 4px;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-family: inherit;
+  }
+  .new-chat-btn:hover { background: rgba(255,122,26,0.25); }
+  .chat-history-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+  .chat-history-item {
+    font-size: 11px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,122,26,0.12);
+    background: rgba(255,122,26,0.04);
+    color: var(--white-dim);
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .chat-history-item:hover { border-color: rgba(255,122,26,0.35); color: var(--white); }
+  .chat-history-item.active { border-color: var(--orange); color: var(--white); background: rgba(255,122,26,0.1); }
+
+  /* ---------- Mini core (relocated during chat) — free-floating, no box ---------- */
   .mini-core-slot {
-    display: flex;
+    display: none;
+    flex: 1;
     align-items: center;
     justify-content: center;
-    height: 90px;
-    padding: 8px;
-    position: relative;
+    min-height: 140px;
   }
-  .mini-core-slot .panel-title { position: absolute; top: 10px; left: 14px; margin: 0; }
-  svg#core.core-mini { width: 62px; height: 62px; margin-top: 8px; }
+  svg#core.core-mini { width: 72%; height: auto; max-width: 260px; }
   .mini-core-slot .core-label { display: none; }
 
   /* ---------- Chat transcript (takes over the middle column) ---------- */
-  .core-wrap.chat-active { align-items: stretch; justify-content: flex-start; padding-top: 90px; }
+  .core-wrap.chat-active {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    padding-top: 195px; /* clears the profit panel's actual height */
+  }
   .chat-transcript {
     width: 100%;
-    height: 100%;
-    max-height: 100%;
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 12px;
-    padding: 10px 6px 10px 6px;
+    padding: 10px 10px 10px 10px;
+    box-sizing: border-box;
   }
   .chat-msg {
     font-size: 14px;
@@ -505,6 +542,14 @@
       <div class="status-row"><span class="label">Uptime</span><span class="val">3d 14h</span></div>
     </div>
 
+    <div class="panel chat-history-panel">
+      <div class="panel-title">
+        <span class="dot"></span>Chat History
+        <button id="newChatBtn" class="new-chat-btn" title="New chat">+</button>
+      </div>
+      <div id="chatHistoryList" class="chat-history-list"></div>
+    </div>
+
     <div class="panel clock-panel" style="margin-top:auto;">
       <div class="clock-time" id="clockTime">--:--:--</div>
       <div class="clock-date" id="clockDate">-- -- ----</div>
@@ -525,31 +570,33 @@
 
     <div class="chat-transcript" id="chatTranscript" style="display:none;"></div>
 
-    <svg id="core" viewBox="0 0 400 400">
-      <g id="ringsGroup" class="rings-group">
-        <g class="ring ring-c">
-          <circle cx="200" cy="200" r="188" fill="none" stroke="var(--orange-dim)" stroke-width="1" stroke-dasharray="1 7" opacity="0.6"/>
-          <g class="tick">
-            <rect x="196" y="4" width="8" height="16" fill="var(--orange)"/>
-            <rect x="196" y="380" width="8" height="16" fill="var(--orange)"/>
+    <div id="coreHome">
+      <svg id="core" viewBox="0 0 400 400">
+        <g id="ringsGroup" class="rings-group">
+          <g class="ring ring-c">
+            <circle cx="200" cy="200" r="188" fill="none" stroke="var(--orange-dim)" stroke-width="1" stroke-dasharray="1 7" opacity="0.6"/>
+            <g class="tick">
+              <rect x="196" y="4" width="8" height="16" fill="var(--orange)"/>
+              <rect x="196" y="380" width="8" height="16" fill="var(--orange)"/>
+            </g>
           </g>
+          <g class="ring ring-b">
+            <circle cx="200" cy="200" r="158" fill="none" stroke="var(--orange)" stroke-width="1.5" opacity="0.45"/>
+            <circle cx="200" cy="200" r="158" fill="none" stroke="var(--orange)" stroke-width="6" opacity="0.9"
+                    stroke-dasharray="70 400" stroke-linecap="round"/>
+          </g>
+          <g class="ring ring-a">
+            <circle cx="200" cy="200" r="128" fill="none" stroke="var(--orange)" stroke-width="2" opacity="0.7"
+                    stroke-dasharray="40 20 8 20" stroke-linecap="round"/>
+          </g>
+          <circle class="core-center" cx="200" cy="200" r="92"/>
+          <circle class="pulse-core" id="pulseCore" cx="200" cy="200" r="14"/>
+          <g id="waveBars" stroke="var(--orange)" stroke-width="4" stroke-linecap="round" opacity="0.9"></g>
         </g>
-        <g class="ring ring-b">
-          <circle cx="200" cy="200" r="158" fill="none" stroke="var(--orange)" stroke-width="1.5" opacity="0.45"/>
-          <circle cx="200" cy="200" r="158" fill="none" stroke="var(--orange)" stroke-width="6" opacity="0.9"
-                  stroke-dasharray="70 400" stroke-linecap="round"/>
-        </g>
-        <g class="ring ring-a">
-          <circle cx="200" cy="200" r="128" fill="none" stroke="var(--orange)" stroke-width="2" opacity="0.7"
-                  stroke-dasharray="40 20 8 20" stroke-linecap="round"/>
-        </g>
-        <circle class="core-center" cx="200" cy="200" r="92"/>
-        <circle class="pulse-core" id="pulseCore" cx="200" cy="200" r="14"/>
-        <g id="waveBars" stroke="var(--orange)" stroke-width="4" stroke-linecap="round" opacity="0.9"></g>
-      </g>
-      <g id="particleField"></g>
-    </svg>
-    <div class="core-label" id="coreLabelWrap">STATUS: <span id="coreStatus">STANDBY</span></div>
+        <g id="particleField"></g>
+      </svg>
+      <div class="core-label" id="coreLabelWrap">STATUS: <span id="coreStatus">STANDBY</span></div>
+    </div>
 
     <div class="debrief" id="debrief">
       <div class="debrief-head">
@@ -579,9 +626,7 @@
       </div>
     </div>
 
-    <div class="panel mini-core-slot" id="miniCoreSlot" style="display:none;">
-      <div class="panel-title"><span class="dot"></span>Claude</div>
-    </div>
+    <div class="mini-core-slot" id="miniCoreSlot"></div>
 
     <div class="panel" style="margin-top:auto;">
       <div class="panel-title"><span class="dot"></span>Connections</div>
@@ -815,13 +860,15 @@
 
   const CLAUDE_PROXY_URL = 'https://atlas-claude-proxy-production.up.railway.app/chat';
   const coreSvg = document.getElementById('core');
-  const coreLabelWrap = document.getElementById('coreLabelWrap');
+  const coreHome = document.getElementById('coreHome');
   const miniCoreSlot = document.getElementById('miniCoreSlot');
   const chatTranscript = document.getElementById('chatTranscript');
   const coreWrapEl = document.querySelector('.core-wrap');
   const modelSelect = document.getElementById('modelSelect');
+  const chatHistoryListEl = document.getElementById('chatHistoryList');
 
-  let claudeChatHistory = []; // full history, persisted to Supabase — this is the memory
+  let claudeChatHistory = []; // messages in the CURRENT conversation
+  let currentConversationId = null;
   let chatActive = false;
   let selectedModel = modelSelect.value;
   modelSelect.addEventListener('change', () => { selectedModel = modelSelect.value; });
@@ -829,6 +876,10 @@
   // Only the most recent messages get resent to the API each turn — full
   // history still lives in Supabase, this just keeps the per-message cost bounded.
   const CHAT_CONTEXT_LIMIT = 20;
+
+  function newConversationId() {
+    return (crypto.randomUUID && crypto.randomUUID()) || ('conv-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+  }
 
   function appendChatBubble(role, text) {
     const div = document.createElement('div');
@@ -839,40 +890,95 @@
     return div;
   }
 
-  // Moves the spinning core into the small slot under Quick Actions and
-  // turns the middle column into the chat transcript. One-way per session.
+  // Moves the spinning core into its free-floating slot under Quick Actions
+  // and turns the middle column into the chat transcript. Reversible — tied
+  // to whether the chat input actually has focus.
   function activateChatMode() {
     if (chatActive) return;
     chatActive = true;
     coreSvg.classList.add('core-mini');
-    miniCoreSlot.appendChild(coreSvg);
-    miniCoreSlot.appendChild(coreLabelWrap);
+    miniCoreSlot.appendChild(coreHome);
     miniCoreSlot.style.display = 'flex';
     coreWrapEl.classList.add('chat-active');
     chatTranscript.style.display = 'flex';
   }
 
-  async function loadChatHistory() {
-    try {
-      const { data, error } = await sb
-        .from('claude_chat_messages')
-        .select('role, content, created_at')
-        .order('created_at', { ascending: true })
-        .limit(200);
-      if (error) { console.error('Chat history load error:', error); return; }
-      if (data && data.length) {
-        claudeChatHistory = data.map((r) => ({ role: r.role, content: r.content }));
-        activateChatMode();
-        claudeChatHistory.forEach((m) => appendChatBubble(m.role, m.content));
-      }
-    } catch (err) {
-      console.error('Chat history load failed:', err);
-    }
+  function deactivateChatMode() {
+    if (!chatActive) return;
+    chatActive = false;
+    coreSvg.classList.remove('core-mini');
+    coreWrapEl.insertBefore(coreHome, debriefEl);
+    miniCoreSlot.style.display = 'none';
+    coreWrapEl.classList.remove('chat-active');
+    chatTranscript.style.display = 'none';
   }
+
+  async function fetchAllMessages() {
+    const { data, error } = await sb
+      .from('claude_chat_messages')
+      .select('conversation_id, role, content, created_at')
+      .order('created_at', { ascending: true })
+      .limit(500);
+    if (error) { console.error('History load error:', error); return []; }
+    return data || [];
+  }
+
+  function groupIntoConversations(rows) {
+    const map = new Map();
+    rows.forEach((row) => {
+      if (!row.conversation_id) return;
+      if (!map.has(row.conversation_id)) {
+        map.set(row.conversation_id, { id: row.conversation_id, label: null, lastAt: row.created_at, messages: [] });
+      }
+      const conv = map.get(row.conversation_id);
+      conv.messages.push({ role: row.role, content: row.content });
+      conv.lastAt = row.created_at;
+      if (!conv.label && row.role === 'user') conv.label = row.content.slice(0, 40);
+    });
+    return Array.from(map.values()).sort((a, b) => new Date(b.lastAt) - new Date(a.lastAt));
+  }
+
+  let cachedConversations = [];
+
+  function renderChatHistoryList() {
+    chatHistoryListEl.innerHTML = cachedConversations.length
+      ? cachedConversations.map((c) => `<div class="chat-history-item${c.id === currentConversationId ? ' active' : ''}" data-id="${c.id}">${escapeHtml(c.label || 'New chat')}</div>`).join('')
+      : '<div class="chat-history-item" style="cursor:default;">No chats yet</div>';
+    chatHistoryListEl.querySelectorAll('.chat-history-item[data-id]').forEach((el) => {
+      el.addEventListener('click', () => { switchConversation(el.dataset.id); askInput.focus(); });
+    });
+  }
+
+  function switchConversation(id, reveal = true) {
+    const conv = cachedConversations.find((c) => c.id === id);
+    if (!conv) return;
+    currentConversationId = id;
+    claudeChatHistory = conv.messages.slice();
+    chatTranscript.innerHTML = '';
+    if (reveal) activateChatMode();
+    claudeChatHistory.forEach((m) => appendChatBubble(m.role, m.content));
+    renderChatHistoryList();
+  }
+
+  async function refreshConversationList() {
+    const rows = await fetchAllMessages();
+    cachedConversations = groupIntoConversations(rows);
+    renderChatHistoryList();
+  }
+
+  function startNewChat() {
+    currentConversationId = newConversationId();
+    claudeChatHistory = [];
+    chatTranscript.innerHTML = '';
+    activateChatMode();
+    renderChatHistoryList();
+    askInput.focus();
+  }
+  document.getElementById('newChatBtn').addEventListener('click', startNewChat);
 
   async function saveChatMessage(role, content) {
     try {
-      await sb.from('claude_chat_messages').insert({ role, content });
+      await sb.from('claude_chat_messages').insert({ role, content, conversation_id: currentConversationId });
     } catch (err) {
       console.error('Chat save error:', err);
     }
@@ -881,6 +987,7 @@
   async function sendClaudeMessage(text) {
     text = text.trim();
     if (!text) return;
+    if (!currentConversationId) currentConversationId = newConversationId();
     activateChatMode();
 
     appendChatBubble('user', text);
@@ -900,15 +1007,23 @@
       const reply = data.reply || 'No response.';
       pending.textContent = reply;
       claudeChatHistory.push({ role: 'assistant', content: reply });
-      saveChatMessage('assistant', reply);
+      await saveChatMessage('assistant', reply);
     } catch (err) {
       pending.textContent = 'Error reaching Claude.';
       console.error('Claude chat error:', err);
     }
     chatTranscript.scrollTop = chatTranscript.scrollHeight;
+    refreshConversationList();
   }
 
-  loadChatHistory();
+  // On load: build the history list, and quietly pre-load the most recent
+  // conversation's messages (if any) so it's ready the moment you focus the
+  // input — but stay in the centered-core standby view until then.
+  refreshConversationList().then(() => {
+    if (cachedConversations.length) {
+      switchConversation(cachedConversations[0].id, false);
+    }
+  });
 
   function selectTask(id) {
     selectedTaskId = id;
@@ -1022,6 +1137,8 @@
       sendClaudeMessage(text);
     }
   });
+  askInput.addEventListener('focus', () => activateChatMode());
+  askInput.addEventListener('blur', () => deactivateChatMode());
 
   /* ================= Profit tracker (Supabase-backed) ================= */
   // profit_entries: { day (date, unique), amount (numeric), breakdown (jsonb: {storeName: amount}) }
