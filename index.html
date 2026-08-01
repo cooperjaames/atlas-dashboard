@@ -239,6 +239,63 @@
   }
   .debrief-empty { font-size: 11px; color: var(--white-dim); font-style: italic; }
 
+  /* Embedded Claude chat, inside the debrief panel */
+  .claude-messages {
+    max-height: 220px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding-right: 4px;
+  }
+  .claude-msg {
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 7px 10px;
+    border-radius: 8px;
+    max-width: 88%;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+  }
+  .claude-msg-user {
+    align-self: flex-end;
+    background: rgba(255,122,26,0.18);
+    border: 1px solid rgba(255,122,26,0.3);
+    color: var(--white);
+  }
+  .claude-msg-assistant {
+    align-self: flex-start;
+    background: var(--black);
+    border: 1px solid rgba(255,122,26,0.15);
+    color: var(--white);
+  }
+  .claude-input-row { display: flex; gap: 6px; }
+  .claude-input-row input {
+    flex: 1;
+    background: rgba(255,122,26,0.06);
+    border: 1px solid rgba(255,122,26,0.25);
+    border-radius: 6px;
+    padding: 7px 10px;
+    color: var(--white);
+    font-family: inherit;
+    font-size: 12px;
+  }
+  .claude-input-row input:focus { outline: none; border-color: var(--orange); }
+  .claude-input-row button {
+    background: rgba(255,122,26,0.12);
+    border: 1px solid var(--orange);
+    color: var(--orange);
+    padding: 7px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    text-transform: uppercase;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .claude-input-row button:hover { background: rgba(255,122,26,0.25); }
+  .claude-input-row button:disabled { opacity: 0.5; cursor: default; }
+
   /* ---------- Floating profit panel ---------- */
   .profit-bar {
     position: absolute;
@@ -602,7 +659,7 @@
   // AI tool connections — same particle field as tasks, wired to real
   // functionality later. "connected" flips true once each is actually built.
   let connections = [
-    { id: 'conn-claude', name: 'Claude', connected: false },
+    { id: 'conn-claude', name: 'Claude', connected: true },
     { id: 'conn-chatgpt', name: 'ChatGPT', connected: false },
     { id: 'conn-higgsfield', name: 'Higgsfield', connected: false },
   ];
@@ -710,6 +767,64 @@
     return d.innerHTML;
   }
 
+  const CLAUDE_PROXY_URL = 'https://atlas-claude-proxy-production.up.railway.app/chat';
+  let claudeChatHistory = [];
+
+  function renderClaudeChat() {
+    debriefBody.innerHTML = `
+      <div id="claudeMessages" class="claude-messages"></div>
+      <div class="claude-input-row">
+        <input type="text" id="claudeInput" placeholder="Message Claude..." />
+        <button id="claudeSendBtn">Send</button>
+      </div>
+    `;
+    const messagesEl = document.getElementById('claudeMessages');
+    const inputEl = document.getElementById('claudeInput');
+    const sendBtn = document.getElementById('claudeSendBtn');
+
+    function appendMessage(role, text) {
+      const div = document.createElement('div');
+      div.className = 'claude-msg claude-msg-' + role;
+      div.textContent = text;
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return div;
+    }
+
+    claudeChatHistory.forEach((m) => appendMessage(m.role, m.content));
+
+    async function send() {
+      const text = inputEl.value.trim();
+      if (!text) return;
+      inputEl.value = '';
+      appendMessage('user', text);
+      claudeChatHistory.push({ role: 'user', content: text });
+      sendBtn.disabled = true;
+      const pending = appendMessage('assistant', '...');
+
+      try {
+        const res = await fetch(CLAUDE_PROXY_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: claudeChatHistory }),
+        });
+        const data = await res.json();
+        const reply = data.reply || 'No response.';
+        pending.textContent = reply;
+        claudeChatHistory.push({ role: 'assistant', content: reply });
+      } catch (err) {
+        pending.textContent = 'Error reaching Claude.';
+        console.error('Claude chat error:', err);
+      }
+      sendBtn.disabled = false;
+      inputEl.focus();
+    }
+
+    sendBtn.addEventListener('click', send);
+    inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+    inputEl.focus();
+  }
+
   function selectTask(id) {
     selectedTaskId = id;
     ringsGroup.classList.add('shrink');
@@ -729,9 +844,11 @@
     const conn = connections.find(c => c.id === id);
     if (conn) {
       debriefTitle.textContent = conn.name;
-      debriefBody.innerHTML = conn.connected
-        ? '<div class="debrief-empty">Connected.</div>'
-        : `<div class="debrief-empty">Not wired up yet — this dot is reserved for ${conn.name}. Coming soon.</div>`;
+      if (conn.id === 'conn-claude' && conn.connected) {
+        renderClaudeChat();
+      } else {
+        debriefBody.innerHTML = `<div class="debrief-empty">Not wired up yet — this dot is reserved for ${conn.name}. Coming soon.</div>`;
+      }
       debriefEl.classList.add('open');
       return;
     }
@@ -947,4 +1064,3 @@
 </script>
 </body>
 </html>
-
