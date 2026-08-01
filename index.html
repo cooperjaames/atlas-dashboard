@@ -429,6 +429,53 @@
   .bottom-right { display: flex; align-items: center; gap: 14px; font-size: 11px; color: var(--white-dim); }
   .user-chip { display: flex; align-items: center; gap: 6px; }
   .user-dot { width: 20px; height: 20px; border-radius: 50%; background: var(--orange-dim); display:flex; align-items:center; justify-content:center; font-size:10px; color: var(--black); font-weight:bold; }
+
+  /* ---------- Mini core (relocated during chat) ---------- */
+  .mini-core-slot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 90px;
+    padding: 8px;
+    position: relative;
+  }
+  .mini-core-slot .panel-title { position: absolute; top: 10px; left: 14px; margin: 0; }
+  svg#core.core-mini { width: 62px; height: 62px; margin-top: 8px; }
+  .mini-core-slot .core-label { display: none; }
+
+  /* ---------- Chat transcript (takes over the middle column) ---------- */
+  .core-wrap.chat-active { align-items: stretch; justify-content: flex-start; padding-top: 90px; }
+  .chat-transcript {
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 10px 6px 10px 6px;
+  }
+  .chat-msg {
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 10px 14px;
+    border-radius: 10px;
+    max-width: 78%;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+  }
+  .chat-msg-user {
+    align-self: flex-end;
+    background: rgba(255,122,26,0.18);
+    border: 1px solid rgba(255,122,26,0.3);
+    color: var(--white);
+  }
+  .chat-msg-assistant {
+    align-self: flex-start;
+    background: var(--black-2);
+    border: 1px solid rgba(255,122,26,0.15);
+    color: var(--white);
+  }
 </style>
 </head>
 <body>
@@ -476,6 +523,8 @@
       <div class="profit-breakdown" id="profitBreakdown"></div>
     </div>
 
+    <div class="chat-transcript" id="chatTranscript" style="display:none;"></div>
+
     <svg id="core" viewBox="0 0 400 400">
       <g id="ringsGroup" class="rings-group">
         <g class="ring ring-c">
@@ -500,7 +549,7 @@
       </g>
       <g id="particleField"></g>
     </svg>
-    <div class="core-label">STATUS: <span id="coreStatus">STANDBY</span></div>
+    <div class="core-label" id="coreLabelWrap">STATUS: <span id="coreStatus">STANDBY</span></div>
 
     <div class="debrief" id="debrief">
       <div class="debrief-head">
@@ -530,6 +579,10 @@
       </div>
     </div>
 
+    <div class="panel mini-core-slot" id="miniCoreSlot" style="display:none;">
+      <div class="panel-title"><span class="dot"></span>Claude</div>
+    </div>
+
     <div class="panel" style="margin-top:auto;">
       <div class="panel-title"><span class="dot"></span>Connections</div>
       <div class="status-row"><span class="label">Shopify</span><span class="val ok">Linked</span></div>
@@ -542,13 +595,13 @@
 <div class="bottom">
   <div class="brand"><div class="brand-mark"></div>ATLAS</div>
   <button class="icon-btn" id="micBtn" title="Toggle talking (demo)">●</button>
-  <select id="connectionSelect" class="connection-select">
-    <option value="">Connect...</option>
-    <option value="conn-claude">Claude</option>
-    <option value="conn-chatgpt">ChatGPT</option>
-    <option value="conn-higgsfield">Higgsfield</option>
+  <select id="modelSelect" class="connection-select">
+    <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+    <option value="claude-sonnet-5" selected>Sonnet 5</option>
+    <option value="claude-opus-4-8">Opus 4.8</option>
+    <option value="claude-fable-5">Fable 5</option>
   </select>
-  <input class="ask-input" placeholder="Ask ATLAS anything..." />
+  <input class="ask-input" id="askInput" placeholder="Message Claude..." />
   <div class="bottom-right">
     <span id="bottomTime">--:-- --</span>
     <div class="user-chip"><div class="user-dot">C</div>Cooper</div>
@@ -642,7 +695,7 @@
   const debriefEl = document.getElementById('debrief');
   const debriefTitle = document.getElementById('debriefTitle');
   const debriefBody = document.getElementById('debriefBody');
-  const askInput = document.querySelector('.ask-input');
+  const askInput = document.getElementById('askInput');
 
   const now = Date.now();
   const hr = 3600 * 1000;
@@ -656,13 +709,6 @@
 
   let particles = [];
   let tasks = [];
-  // AI tool connections — same particle field as tasks, wired to real
-  // functionality later. "connected" flips true once each is actually built.
-  let connections = [
-    { id: 'conn-claude', name: 'Claude', connected: true },
-    { id: 'conn-chatgpt', name: 'ChatGPT', connected: false },
-    { id: 'conn-higgsfield', name: 'Higgsfield', connected: false },
-  ];
   let selectedTaskId = null;
 
   function makeParticle(i) {
@@ -768,62 +814,101 @@
   }
 
   const CLAUDE_PROXY_URL = 'https://atlas-claude-proxy-production.up.railway.app/chat';
-  let claudeChatHistory = [];
+  const coreSvg = document.getElementById('core');
+  const coreLabelWrap = document.getElementById('coreLabelWrap');
+  const miniCoreSlot = document.getElementById('miniCoreSlot');
+  const chatTranscript = document.getElementById('chatTranscript');
+  const coreWrapEl = document.querySelector('.core-wrap');
+  const modelSelect = document.getElementById('modelSelect');
 
-  function renderClaudeChat() {
-    debriefBody.innerHTML = `
-      <div id="claudeMessages" class="claude-messages"></div>
-      <div class="claude-input-row">
-        <input type="text" id="claudeInput" placeholder="Message Claude..." />
-        <button id="claudeSendBtn">Send</button>
-      </div>
-    `;
-    const messagesEl = document.getElementById('claudeMessages');
-    const inputEl = document.getElementById('claudeInput');
-    const sendBtn = document.getElementById('claudeSendBtn');
+  let claudeChatHistory = []; // full history, persisted to Supabase — this is the memory
+  let chatActive = false;
+  let selectedModel = modelSelect.value;
+  modelSelect.addEventListener('change', () => { selectedModel = modelSelect.value; });
 
-    function appendMessage(role, text) {
-      const div = document.createElement('div');
-      div.className = 'claude-msg claude-msg-' + role;
-      div.textContent = text;
-      messagesEl.appendChild(div);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-      return div;
-    }
+  // Only the most recent messages get resent to the API each turn — full
+  // history still lives in Supabase, this just keeps the per-message cost bounded.
+  const CHAT_CONTEXT_LIMIT = 20;
 
-    claudeChatHistory.forEach((m) => appendMessage(m.role, m.content));
-
-    async function send() {
-      const text = inputEl.value.trim();
-      if (!text) return;
-      inputEl.value = '';
-      appendMessage('user', text);
-      claudeChatHistory.push({ role: 'user', content: text });
-      sendBtn.disabled = true;
-      const pending = appendMessage('assistant', '...');
-
-      try {
-        const res = await fetch(CLAUDE_PROXY_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages: claudeChatHistory }),
-        });
-        const data = await res.json();
-        const reply = data.reply || 'No response.';
-        pending.textContent = reply;
-        claudeChatHistory.push({ role: 'assistant', content: reply });
-      } catch (err) {
-        pending.textContent = 'Error reaching Claude.';
-        console.error('Claude chat error:', err);
-      }
-      sendBtn.disabled = false;
-      inputEl.focus();
-    }
-
-    sendBtn.addEventListener('click', send);
-    inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
-    inputEl.focus();
+  function appendChatBubble(role, text) {
+    const div = document.createElement('div');
+    div.className = 'chat-msg chat-msg-' + role;
+    div.textContent = text;
+    chatTranscript.appendChild(div);
+    chatTranscript.scrollTop = chatTranscript.scrollHeight;
+    return div;
   }
+
+  // Moves the spinning core into the small slot under Quick Actions and
+  // turns the middle column into the chat transcript. One-way per session.
+  function activateChatMode() {
+    if (chatActive) return;
+    chatActive = true;
+    coreSvg.classList.add('core-mini');
+    miniCoreSlot.appendChild(coreSvg);
+    miniCoreSlot.appendChild(coreLabelWrap);
+    miniCoreSlot.style.display = 'flex';
+    coreWrapEl.classList.add('chat-active');
+    chatTranscript.style.display = 'flex';
+  }
+
+  async function loadChatHistory() {
+    try {
+      const { data, error } = await sb
+        .from('claude_chat_messages')
+        .select('role, content, created_at')
+        .order('created_at', { ascending: true })
+        .limit(200);
+      if (error) { console.error('Chat history load error:', error); return; }
+      if (data && data.length) {
+        claudeChatHistory = data.map((r) => ({ role: r.role, content: r.content }));
+        activateChatMode();
+        claudeChatHistory.forEach((m) => appendChatBubble(m.role, m.content));
+      }
+    } catch (err) {
+      console.error('Chat history load failed:', err);
+    }
+  }
+
+  async function saveChatMessage(role, content) {
+    try {
+      await sb.from('claude_chat_messages').insert({ role, content });
+    } catch (err) {
+      console.error('Chat save error:', err);
+    }
+  }
+
+  async function sendClaudeMessage(text) {
+    text = text.trim();
+    if (!text) return;
+    activateChatMode();
+
+    appendChatBubble('user', text);
+    claudeChatHistory.push({ role: 'user', content: text });
+    saveChatMessage('user', text);
+
+    const pending = appendChatBubble('assistant', '...');
+
+    try {
+      const contextMessages = claudeChatHistory.slice(-CHAT_CONTEXT_LIMIT);
+      const res = await fetch(CLAUDE_PROXY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: contextMessages, model: selectedModel }),
+      });
+      const data = await res.json();
+      const reply = data.reply || 'No response.';
+      pending.textContent = reply;
+      claudeChatHistory.push({ role: 'assistant', content: reply });
+      saveChatMessage('assistant', reply);
+    } catch (err) {
+      pending.textContent = 'Error reaching Claude.';
+      console.error('Claude chat error:', err);
+    }
+    chatTranscript.scrollTop = chatTranscript.scrollHeight;
+  }
+
+  loadChatHistory();
 
   function selectTask(id) {
     selectedTaskId = id;
@@ -837,18 +922,6 @@
       debriefBody.innerHTML = entries.length
         ? entries.map(e => `<div class="debrief-entry"><span class="t">${timeAgo(e.time)}</span>${escapeHtml(e.text)}</div>`).join('')
         : '<div class="debrief-empty">No activity logged in the last 24 hours.</div>';
-      debriefEl.classList.add('open');
-      return;
-    }
-
-    const conn = connections.find(c => c.id === id);
-    if (conn) {
-      debriefTitle.textContent = conn.name;
-      if (conn.id === 'conn-claude' && conn.connected) {
-        renderClaudeChat();
-      } else {
-        debriefBody.innerHTML = `<div class="debrief-empty">Not wired up yet — this dot is reserved for ${conn.name}. Coming soon.</div>`;
-      }
       debriefEl.classList.add('open');
       return;
     }
@@ -937,17 +1010,6 @@
   }
   loadTasksFromDB();
 
-  // Claim particles for the 3 AI-tool connections, same pool as tasks.
-  connections.forEach(c => claimParticle(c.id));
-  renderParticles();
-
-  document.getElementById('connectionSelect').addEventListener('change', (e) => {
-    if (e.target.value) {
-      selectTask(e.target.value);
-      e.target.value = '';
-    }
-  });
-
   document.getElementById('newTaskBtn').addEventListener('click', () => {
     const name = prompt('New task name:');
     if (name && name.trim()) window.atlas.addTask(name.trim());
@@ -955,9 +1017,9 @@
 
   askInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && askInput.value.trim()) {
-      const matched = window.atlas.ask(askInput.value);
-      if (!matched) closeDebrief();
+      const text = askInput.value;
       askInput.value = '';
+      sendClaudeMessage(text);
     }
   });
 
