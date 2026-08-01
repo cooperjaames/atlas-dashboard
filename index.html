@@ -12,6 +12,9 @@
     --orange: #ff7a1a;
     --orange-dim: #b8560f;
     --orange-glow: rgba(255, 122, 26, 0.35);
+    --cyan: #2fd8ff;
+    --cyan-dim: #1b8aa8;
+    --cyan-glow: rgba(47, 216, 255, 0.4);
     --white: #f4f4f2;
     --white-dim: rgba(244,244,242,0.55);
   }
@@ -25,13 +28,27 @@
   }
   body {
     background:
-      radial-gradient(circle at 50% 45%, rgba(255,122,26,0.05), transparent 55%),
+      radial-gradient(circle at 50% 45%, rgba(255,122,26,0.07), transparent 55%),
+      radial-gradient(ellipse at 50% 100%, rgba(255,122,26,0.04), transparent 60%),
+      repeating-linear-gradient(0deg, rgba(255,122,26,0.025) 0px, rgba(255,122,26,0.025) 1px, transparent 1px, transparent 34px),
+      repeating-linear-gradient(90deg, rgba(255,122,26,0.025) 0px, rgba(255,122,26,0.025) 1px, transparent 1px, transparent 34px),
       var(--black);
     display: grid;
     grid-template-rows: 1fr auto;
     height: 100vh;
     padding: 18px;
     gap: 14px;
+    position: relative;
+  }
+  /* soft vignette + faint scanlines over everything, for depth */
+  body::after {
+    content: "";
+    position: fixed; inset: 0; pointer-events: none; z-index: 40;
+    background:
+      repeating-linear-gradient(0deg, rgba(0,0,0,0.09) 0px, rgba(0,0,0,0.09) 1px, transparent 1px, transparent 3px),
+      radial-gradient(circle at 50% 50%, transparent 55%, rgba(0,0,0,0.55) 100%);
+    mix-blend-mode: multiply;
+    opacity: 0.5;
   }
 
   /* ---------- Top grid ---------- */
@@ -51,12 +68,27 @@
     padding: 14px 16px;
     position: relative;
     overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(255,122,26,0.03) inset, 0 8px 24px rgba(0,0,0,0.35);
+    transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  }
+  .panel:hover {
+    border-color: rgba(255,122,26,0.32);
+    box-shadow: 0 0 0 1px rgba(255,122,26,0.05) inset, 0 8px 24px rgba(0,0,0,0.35), 0 0 18px rgba(255,122,26,0.06);
   }
   .panel::before {
     content: "";
     position: absolute; top: 0; left: 0; right: 0; height: 2px;
     background: linear-gradient(90deg, transparent, var(--orange), transparent);
     opacity: 0.6;
+    box-shadow: 0 0 8px var(--orange-glow);
+  }
+  .panel::after {
+    content: "";
+    position: absolute; top: 0; left: 0; width: 10px; height: 10px;
+    border-top: 1px solid rgba(255,122,26,0.5);
+    border-left: 1px solid rgba(255,122,26,0.5);
+    border-radius: 10px 0 0 0;
+    pointer-events: none;
   }
   .panel-title {
     font-size: 11px;
@@ -119,13 +151,27 @@
   .core-wrap {
     display: flex; align-items: center; justify-content: center;
     position: relative; min-height: 0;
+    perspective: 1400px;
   }
-  svg#core { width: min(74vh, 100%); height: min(74vh, 100%); }
+  svg#core {
+    width: min(74vh, 100%); height: min(74vh, 100%);
+    transform-style: preserve-3d;
+    animation: core-tilt 10s ease-in-out infinite;
+    will-change: transform;
+  }
+  @keyframes core-tilt {
+    0%   { transform: rotateX(9deg)  rotateY(-10deg) rotateZ(0deg); }
+    25%  { transform: rotateX(-7deg) rotateY(12deg)  rotateZ(1.5deg); }
+    50%  { transform: rotateX(11deg) rotateY(6deg)   rotateZ(-1deg); }
+    75%  { transform: rotateX(-9deg) rotateY(-11deg) rotateZ(1deg); }
+    100% { transform: rotateX(9deg)  rotateY(-10deg) rotateZ(0deg); }
+  }
+  body.talking svg#core { animation-duration: 3.2s; }
 
   .ring { transform-origin: 200px 200px; }
-  .ring-a { animation: spin 18s linear infinite; }
-  .ring-b { animation: spin-rev 26s linear infinite; }
-  .ring-c { animation: spin 40s linear infinite; }
+  .ring-a { animation: spin 7s linear infinite; }
+  .ring-b { animation: spin-rev 11s linear infinite; }
+  .ring-c { animation: spin 17s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes spin-rev { to { transform: rotate(-360deg); } }
 
@@ -133,18 +179,51 @@
     fill: var(--black);
     stroke: var(--orange);
     stroke-width: 1.5;
-    filter: drop-shadow(0 0 10px var(--orange-glow));
+    filter: drop-shadow(0 0 10px var(--orange-glow)) drop-shadow(0 0 26px rgba(255,122,26,0.18));
+    transition: stroke 0.25s ease, filter 0.25s ease;
+  }
+  .core-halo {
+    fill: none;
+    stroke: var(--cyan);
+    stroke-width: 1;
+    opacity: 0.14;
+    filter: blur(6px);
+    animation: halo-breathe 5s ease-in-out infinite;
+  }
+  @keyframes halo-breathe {
+    0%, 100% { opacity: 0.08; r: 96; }
+    50% { opacity: 0.24; r: 106; }
   }
   .pulse-core {
     fill: var(--orange);
     opacity: 0.85;
     transition: r 0.08s linear, opacity 0.2s;
+    filter: drop-shadow(0 0 10px var(--orange)) drop-shadow(0 0 22px var(--orange-glow));
   }
 
+  /* invisible hit target over the core center — click opens the fullscreen chat */
+  .core-center-hit { fill: transparent; cursor: pointer; }
+  .core-hover-label {
+    fill: var(--cyan);
+    font-size: 9px;
+    letter-spacing: 2px;
+    text-anchor: middle;
+    text-transform: uppercase;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    filter: drop-shadow(0 0 4px var(--cyan-glow));
+  }
+  svg#core.core-hover .core-hover-label { opacity: 0.95; }
+  svg#core.core-hover .core-center {
+    stroke: var(--cyan);
+    filter: drop-shadow(0 0 16px var(--cyan-glow)) drop-shadow(0 0 30px var(--orange-glow));
+  }
+  svg#core.core-hover .pulse-core { filter: drop-shadow(0 0 14px var(--cyan)) drop-shadow(0 0 26px var(--cyan-glow)); }
+
   /* talking state */
-  body.talking .ring-a { animation-duration: 4s; }
-  body.talking .ring-b { animation-duration: 6s; }
-  body.talking .ring-c { animation-duration: 10s; }
+  body.talking .ring-a { animation-duration: 2.4s; }
+  body.talking .ring-b { animation-duration: 3.6s; }
+  body.talking .ring-c { animation-duration: 6s; }
   body.talking .core-center { filter: drop-shadow(0 0 22px var(--orange)); }
   body.talking .tick { opacity: 1; }
   .tick { transition: opacity 0.3s; }
@@ -164,23 +243,54 @@
   .particle-shape {
     transform-origin: 0px 0px;
     transition: transform 0.12s linear, opacity 0.35s ease, fill 0.3s ease;
-    opacity: 0.55;
+    opacity: 0.5;
   }
   .particle-shape .fig {
     fill: var(--orange-dim);
+    filter: drop-shadow(0 0 2px rgba(255,122,26,0.5));
   }
-  .particle-shape.linked .fig { fill: var(--orange); opacity: 0.8; }
-  .particle-shape.linked { cursor: pointer; opacity: 0.85; }
-  .particle-shape.linked:hover .fig { filter: drop-shadow(0 0 5px var(--orange-glow)); }
-  .particle-shape.dimmed { opacity: 0.06; }
+  .particle-shape.linked .fig { fill: var(--orange); opacity: 0.9; filter: drop-shadow(0 0 4px var(--orange-glow)); }
+  .particle-shape.linked { cursor: pointer; opacity: 0.9; }
+  .particle-shape.linked:hover .fig { filter: drop-shadow(0 0 8px var(--orange)); }
+  .particle-shape.dimmed { opacity: 0.05; }
   .particle-shape.selected {
     opacity: 1;
     transition: transform 0.5s cubic-bezier(.4,0,.2,1), opacity 0.3s ease;
   }
   .particle-shape.selected .fig {
     fill: var(--orange);
-    filter: drop-shadow(0 0 20px var(--orange));
+    filter: drop-shadow(0 0 10px var(--orange)) drop-shadow(0 0 24px var(--orange));
   }
+
+  /* faint web of lines linking nearby particles — gives the sphere its "network" read */
+  #particleLines line {
+    stroke: var(--orange);
+    stroke-width: 0.6;
+  }
+
+  /* ---------- HUD stat overlay (top-left of core) ---------- */
+  .hud-stats {
+    position: absolute;
+    top: 6px; left: 6px;
+    z-index: 3;
+    font-size: 10px;
+    line-height: 1.6;
+    letter-spacing: 1px;
+    color: var(--orange);
+    text-shadow: 0 0 6px var(--orange-glow);
+    opacity: 0.85;
+    pointer-events: none;
+    text-transform: uppercase;
+    user-select: none;
+  }
+  .hud-stats .hud-row span:first-child { color: var(--white-dim); margin-right: 6px; }
+  .hud-stats .hud-status { display: flex; align-items: center; gap: 5px; margin-top: 2px; color: var(--white-dim); }
+  .hud-stats .hud-status .dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--orange); box-shadow: 0 0 6px var(--orange);
+    animation: hud-blink 2.4s ease-in-out infinite;
+  }
+  @keyframes hud-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
   /* Debrief panel */
   .debrief {
@@ -390,6 +500,7 @@
   }
   .icon-btn:hover { color: var(--orange); border-color: var(--orange); }
   #micBtn.active { background: var(--orange); color: var(--black); box-shadow: 0 0 14px var(--orange); }
+  .bottom-spacer { flex: 1; }
 
   .ask-input {
     flex: 1;
@@ -489,25 +600,104 @@
   .context-menu-item:hover { background: rgba(255,122,26,0.15); color: var(--orange); }
   .context-menu-item.danger:hover { background: rgba(255,92,92,0.15); color: #ff5c5c; }
 
-  /* ---------- Mini core (relocated during chat) — free-floating, no box ---------- */
-  #coreHome { will-change: transform; }
-  .mini-core-slot {
-    display: none;
-    flex: 1;
-    align-items: center;
-    justify-content: center;
-    min-height: 140px;
-  }
-  svg#core.core-mini { width: 72%; height: auto; max-width: 260px; }
+  #coreHome { position: relative; }
 
-  /* ---------- Chat transcript (takes over the middle column) ---------- */
-  .core-wrap.chat-active {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    justify-content: flex-start;
-    padding-top: 195px; /* clears the profit panel's actual height */
+  /* ---------- Fullscreen chat overlay — opened by clicking the core ---------- */
+  .chat-overlay {
+    position: fixed; inset: 0;
+    z-index: 100;
+    opacity: 0;
+    pointer-events: none;
+    clip-path: circle(0px at 50% 50%);
   }
+  .chat-overlay.open { opacity: 1; pointer-events: auto; }
+  .chat-overlay-inner {
+    width: 100%; height: 100%;
+    background:
+      radial-gradient(circle at 50% 20%, rgba(255,122,26,0.06), transparent 55%),
+      linear-gradient(180deg, rgba(13,14,17,0.94), rgba(8,9,11,0.98));
+    backdrop-filter: blur(22px) saturate(1.3);
+    -webkit-backdrop-filter: blur(22px) saturate(1.3);
+    display: flex; flex-direction: column;
+    padding: 20px 26px 26px;
+    box-sizing: border-box;
+  }
+
+  /* dim + blur the dashboard behind the overlay while chat is open */
+  .main, .bottom { transition: filter 0.5s ease; }
+  body.chat-open .main, body.chat-open .bottom { filter: blur(4px) brightness(0.45) saturate(0.7); }
+
+  .chat-flash {
+    position: fixed;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #fff, var(--orange) 35%, var(--cyan-glow) 65%, transparent 72%);
+    transform: translate(-50%, -50%) scale(0);
+    pointer-events: none;
+    z-index: 101;
+    opacity: 0;
+  }
+  .chat-flash.burst { animation: flash-burst 0.55s ease-out forwards; }
+  @keyframes flash-burst {
+    0%   { transform: translate(-50%, -50%) scale(0); opacity: 1; }
+    55%  { opacity: 0.85; }
+    100% { transform: translate(-50%, -50%) scale(26); opacity: 0; }
+  }
+
+  .chat-overlay-header {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 14px;
+    flex-shrink: 0;
+  }
+  .chat-overlay-title {
+    display: flex; align-items: center; gap: 8px;
+    font-weight: bold; letter-spacing: 3px; color: var(--orange);
+    font-size: 14px; text-transform: uppercase;
+  }
+  .chat-overlay-title .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--cyan); box-shadow: 0 0 8px var(--cyan);
+    animation: hud-blink 2.4s ease-in-out infinite;
+  }
+  .chat-overlay-spacer { flex: 1; }
+  .chat-overlay-icon-btn {
+    width: 32px; height: 32px; border-radius: 6px;
+    border: 1px solid rgba(255,122,26,0.25);
+    background: transparent; color: var(--white-dim);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; cursor: pointer; font-family: inherit;
+    transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
+  }
+  .chat-overlay-icon-btn:hover { color: var(--cyan); border-color: var(--cyan); box-shadow: 0 0 10px var(--cyan-glow); }
+
+  .chat-overlay-body {
+    flex: 1; min-height: 0;
+    display: flex;
+    position: relative;
+  }
+
+  /* history drawer slides in over the transcript from the left */
+  .chat-history-drawer {
+    position: absolute; top: 0; bottom: 0; left: 0;
+    width: 260px;
+    background: linear-gradient(180deg, var(--black-2), var(--black-3));
+    border: 1px solid rgba(255,122,26,0.2);
+    border-radius: 10px;
+    padding: 12px;
+    display: flex; flex-direction: column;
+    gap: 8px;
+    transform: translateX(-116%);
+    transition: transform 0.32s cubic-bezier(.4,0,.2,1);
+    z-index: 3;
+    box-shadow: 12px 0 30px rgba(0,0,0,0.4);
+  }
+  .chat-history-drawer.open { transform: translateX(0); }
+  .chat-history-drawer-head {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--orange);
+    padding-bottom: 8px; border-bottom: 1px solid rgba(255,122,26,0.15);
+  }
+
   .chat-transcript {
     width: 100%;
     flex: 1;
@@ -515,14 +705,16 @@
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 10px 10px 10px 10px;
+    gap: 14px;
+    padding: 6px 8px 6px 8px;
     box-sizing: border-box;
+    max-width: 760px;
+    margin: 0 auto;
   }
   .chat-msg {
-    font-size: 14px;
-    line-height: 1.5;
-    padding: 10px 14px;
+    font-size: 14.5px;
+    line-height: 1.55;
+    padding: 11px 15px;
     border-radius: 10px;
     max-width: 78%;
     word-wrap: break-word;
@@ -537,9 +729,21 @@
   .chat-msg-assistant {
     align-self: flex-start;
     background: var(--black-2);
-    border: 1px solid rgba(255,122,26,0.15);
+    border: 1px solid rgba(47,216,255,0.18);
     color: var(--white);
   }
+
+  /* input bar — hidden until the zoom-in finishes, then slides/fades into place */
+  .chat-overlay-inputbar {
+    flex-shrink: 0;
+    display: flex; align-items: center; gap: 10px;
+    max-width: 760px; width: 100%;
+    margin: 14px auto 0;
+    opacity: 0;
+    transform: translateY(18px);
+    transition: opacity 0.4s ease, transform 0.4s cubic-bezier(.4,0,.2,1);
+  }
+  .chat-overlay-inputbar.show { opacity: 1; transform: translateY(0); }
 </style>
 </head>
 <body>
@@ -569,14 +773,6 @@
       <div class="status-row"><span class="label">Uptime</span><span class="val">3d 14h</span></div>
     </div>
 
-    <div class="panel chat-history-panel">
-      <div class="panel-title">
-        <span class="dot"></span>Chat History
-        <button id="newChatBtn" class="new-chat-btn" title="New chat">+</button>
-      </div>
-      <div id="chatHistoryList" class="chat-history-list"></div>
-    </div>
-
     <div class="panel clock-panel" style="margin-top:auto;">
       <div class="clock-time" id="clockTime">--:--:--</div>
       <div class="clock-date" id="clockDate">-- -- ----</div>
@@ -595,16 +791,31 @@
       <div class="profit-breakdown" id="profitBreakdown"></div>
     </div>
 
-    <div class="chat-transcript" id="chatTranscript" style="display:none;"></div>
-
     <div id="coreHome">
+      <div class="hud-stats" id="hudStats">
+        <div class="hud-row"><span>NODES:</span><span id="hudNodes">0</span></div>
+        <div class="hud-row"><span>LINKED:</span><span id="hudLinked">0</span></div>
+        <div class="hud-row"><span>LINES:</span><span id="hudLines">0</span></div>
+        <div class="hud-row"><span>FPS:</span><span id="hudFps">0</span></div>
+        <div class="hud-status"><span class="dot"></span><span id="hudSim">SIM STABLE</span></div>
+      </div>
       <svg id="core" viewBox="0 0 400 400">
+        <defs>
+          <filter id="bloomFilter" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="3.2" result="blur"/>
+            <feMerge>
+              <feMergeNode in="blur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+        </defs>
         <g id="ringsGroup" class="rings-group">
+          <circle class="core-halo" cx="200" cy="200" r="96"/>
           <g class="ring ring-c">
-            <circle cx="200" cy="200" r="188" fill="none" stroke="var(--orange-dim)" stroke-width="1" stroke-dasharray="1 7" opacity="0.6"/>
+            <circle cx="200" cy="200" r="188" fill="none" stroke="var(--cyan-dim)" stroke-width="1" stroke-dasharray="1 7" opacity="0.55"/>
             <g class="tick">
-              <rect x="196" y="4" width="8" height="16" fill="var(--orange)"/>
-              <rect x="196" y="380" width="8" height="16" fill="var(--orange)"/>
+              <rect x="196" y="4" width="8" height="16" fill="var(--cyan)"/>
+              <rect x="196" y="380" width="8" height="16" fill="var(--cyan)"/>
             </g>
           </g>
           <g class="ring ring-b">
@@ -619,7 +830,10 @@
           <circle class="core-center" cx="200" cy="200" r="92"/>
           <circle class="pulse-core" id="pulseCore" cx="200" cy="200" r="14"/>
           <g id="waveBars" stroke="var(--orange)" stroke-width="4" stroke-linecap="round" opacity="0.9"></g>
+          <circle class="core-center-hit" id="coreCenterHit" cx="200" cy="200" r="90"/>
+          <text class="core-hover-label" x="200" y="252">Tap to chat</text>
         </g>
+        <g id="particleLines" filter="url(#bloomFilter)"></g>
         <g id="particleField"></g>
       </svg>
     </div>
@@ -652,8 +866,6 @@
       </div>
     </div>
 
-    <div class="mini-core-slot" id="miniCoreSlot"></div>
-
     <div class="panel" style="margin-top:auto;">
       <div class="panel-title"><span class="dot"></span>Connections</div>
       <div class="status-row"><span class="label">Shopify</span><span class="val ok">Linked</span></div>
@@ -666,13 +878,7 @@
 <div class="bottom">
   <div class="brand"><div class="brand-mark"></div>ATLAS</div>
   <button class="icon-btn" id="micBtn" title="Toggle talking (demo)">●</button>
-  <select id="modelSelect" class="connection-select">
-    <option value="claude-haiku-4-5-20251001" selected>Haiku 4.5</option>
-    <option value="claude-sonnet-5">Sonnet 5</option>
-    <option value="claude-opus-4-8">Opus 4.8</option>
-    <option value="claude-fable-5">Fable 5</option>
-  </select>
-  <input class="ask-input" id="askInput" placeholder="Message ATLAS..." />
+  <div class="bottom-spacer"></div>
   <div class="bottom-right">
     <span id="bottomTime">--:-- --</span>
     <div class="user-chip"><div class="user-dot">C</div>Cooper</div>
@@ -683,6 +889,37 @@
   <button class="context-menu-item" id="ctxPin">Pin</button>
   <button class="context-menu-item" id="ctxRename">Rename</button>
   <button class="context-menu-item danger" id="ctxDelete">Delete</button>
+</div>
+
+<div class="chat-overlay" id="chatOverlay">
+  <div class="chat-overlay-inner">
+    <div class="chat-overlay-header">
+      <button class="chat-overlay-icon-btn" id="chatHistoryToggle" title="Chat history">☰</button>
+      <div class="chat-overlay-title"><span class="dot"></span>ATLAS</div>
+      <div class="chat-overlay-spacer"></div>
+      <button class="chat-overlay-icon-btn" id="chatOverlayClose" title="Close">✕</button>
+    </div>
+    <div class="chat-overlay-body">
+      <div class="chat-history-drawer" id="chatHistoryDrawer">
+        <div class="chat-history-drawer-head">
+          <span>Chat History</span>
+          <button id="newChatBtn" class="new-chat-btn" title="New chat">+</button>
+        </div>
+        <div id="chatHistoryList" class="chat-history-list"></div>
+      </div>
+      <div class="chat-transcript" id="chatTranscript"></div>
+    </div>
+    <div class="chat-overlay-inputbar" id="chatInputBar">
+      <select id="modelSelect" class="connection-select">
+        <option value="claude-haiku-4-5-20251001" selected>Haiku 4.5</option>
+        <option value="claude-sonnet-5">Sonnet 5</option>
+        <option value="claude-opus-4-8">Opus 4.8</option>
+        <option value="claude-fable-5">Fable 5</option>
+      </select>
+      <input class="ask-input" id="askInput" placeholder="Message ATLAS..." />
+    </div>
+  </div>
+  <div class="chat-flash" id="chatFlash"></div>
 </div>
 
 <script>
@@ -776,7 +1013,7 @@
   const hr = 3600 * 1000;
 
   const SHAPE_TYPES = ['circle'];
-  const PARTICLE_COUNT = 90;
+  const PARTICLE_COUNT = 150;
   const CENTER = 200;
   const MIN_R = 22;   // keep clear of the pulse core
   const MAX_R = 82;   // stay inside the black core disc (r=92)
@@ -842,24 +1079,88 @@
   }
   renderParticles();
 
+  /* ---------- Particle web (connecting lines) + HUD stats ---------- */
+  const particleLinesEl = document.getElementById('particleLines');
+  const hudNodesEl = document.getElementById('hudNodes');
+  const hudLinkedEl = document.getElementById('hudLinked');
+  const hudLinesEl = document.getElementById('hudLines');
+  const hudFpsEl = document.getElementById('hudFps');
+  const hudSimEl = document.getElementById('hudSim');
+  const LINK_DIST = 30; // only nearby particles get webbed together
+  let linePool = [];
+
+  function getLine(i) {
+    if (linePool[i]) return linePool[i];
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    particleLinesEl.appendChild(line);
+    linePool[i] = line;
+    return line;
+  }
+
+  function updateParticleWeb() {
+    let used = 0;
+    for (let i = 0; i < particles.length; i++) {
+      const a = particles[i];
+      if (a.x === undefined) continue;
+      for (let j = i + 1; j < particles.length; j++) {
+        const b = particles[j];
+        if (b.x === undefined) continue;
+        const dx = a.x - b.x, dy = a.y - b.y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < LINK_DIST) {
+          const line = getLine(used++);
+          line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
+          line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
+          line.style.opacity = Math.max(0, 0.28 * (1 - d / LINK_DIST));
+          line.style.display = '';
+        }
+      }
+    }
+    // hide leftover pooled lines from a previous, denser frame
+    for (let k = used; k < linePool.length; k++) linePool[k].style.display = 'none';
+    hudLinesEl.textContent = used;
+  }
+
   // Continuous ambient motion — orbit + gentle size breathing, skipped for the
   // currently-expanded particle since that one is pinned center via CSS transition.
   let lastFrame = performance.now();
+  let webFrameCounter = 0;
+  let fpsSamples = [];
   function animateParticles(t) {
     const dt = Math.min(0.05, (t - lastFrame) / 1000);
+    const instFps = dt > 0 ? 1 / dt : 0;
     lastFrame = t;
+
+    fpsSamples.push(instFps);
+    if (fpsSamples.length > 30) fpsSamples.shift();
+
     particles.forEach(p => {
-      if (selectedTaskId && p.taskId === selectedTaskId) return; // pinned to center, don't fight the CSS transition
+      if (selectedTaskId && p.taskId === selectedTaskId) { p.x = p.y = undefined; return; } // pinned to center, don't fight the CSS transition; excluded from the web
       p.angle += p.angularSpeed * dt;
       const x = CENTER + Math.cos(p.angle) * p.dist;
       const y = CENTER + Math.sin(p.angle) * p.dist;
       const size = Math.max(1.2, p.sizeBase + Math.sin(t / 1000 * p.sizeSpeed + p.sizePhase) * p.sizeAmp);
       if (p.gEl) p.gEl.setAttribute('transform', `translate(${x},${y})`);
       if (p.circleEl) p.circleEl.setAttribute('r', size);
+      p.x = x; p.y = y;
     });
+
+    // webbing is O(n^2) — throttle it to every 3rd frame, plenty smooth at this particle count
+    webFrameCounter++;
+    if (webFrameCounter % 3 === 0) updateParticleWeb();
+
     requestAnimationFrame(animateParticles);
   }
   requestAnimationFrame(animateParticles);
+
+  function updateHudStats() {
+    hudNodesEl.textContent = particles.length;
+    hudLinkedEl.textContent = particles.filter(p => p.taskId).length;
+    const avgFps = fpsSamples.length ? fpsSamples.reduce((a, b) => a + b, 0) / fpsSamples.length : 0;
+    hudFpsEl.textContent = Math.round(avgFps);
+    hudSimEl.textContent = selectedTaskId ? 'TASK FOCUS' : 'SIM STABLE';
+  }
+  setInterval(updateHudStats, 500);
 
   function claimParticle(taskId) {
     let free = particles.filter(p => !p.taskId);
@@ -890,12 +1191,16 @@
 
   const CLAUDE_PROXY_URL = 'https://lively-compassion-production-8818.up.railway.app/chat';
   const coreSvg = document.getElementById('core');
-  const coreHome = document.getElementById('coreHome');
-  const miniCoreSlot = document.getElementById('miniCoreSlot');
+  const coreCenterHit = document.getElementById('coreCenterHit');
   const chatTranscript = document.getElementById('chatTranscript');
-  const coreWrapEl = document.querySelector('.core-wrap');
   const modelSelect = document.getElementById('modelSelect');
   const chatHistoryListEl = document.getElementById('chatHistoryList');
+  const chatOverlay = document.getElementById('chatOverlay');
+  const chatFlash = document.getElementById('chatFlash');
+  const chatInputBar = document.getElementById('chatInputBar');
+  const chatHistoryDrawer = document.getElementById('chatHistoryDrawer');
+  const chatHistoryToggle = document.getElementById('chatHistoryToggle');
+  const chatOverlayCloseBtn = document.getElementById('chatOverlayClose');
 
   let claudeChatHistory = []; // messages in the CURRENT conversation
   let currentConversationId = null;
@@ -916,58 +1221,80 @@
     return div;
   }
 
-  // FLIP technique: measure before, do the actual (instant) DOM move, measure
-  // after, then fake the animation by starting the element visually at its
-  // old position/size and transitioning to the new one. This is what makes
-  // the reparent-based move glide instead of snap.
-  function animateCoreMove(moveFn) {
-    const first = coreHome.getBoundingClientRect();
-    moveFn();
-    const last = coreHome.getBoundingClientRect();
+  // Core hover glow — invites the click that opens chat.
+  coreCenterHit.addEventListener('mouseenter', () => coreSvg.classList.add('core-hover'));
+  coreCenterHit.addEventListener('mouseleave', () => coreSvg.classList.remove('core-hover'));
+  coreCenterHit.addEventListener('click', () => openChatOverlay());
 
-    const dx = first.left - last.left;
-    const dy = first.top - last.top;
-    const scaleX = first.width / last.width;
-    const scaleY = first.height / last.height;
-
-    coreHome.style.transformOrigin = 'top left';
-    coreHome.style.transition = 'none';
-    coreHome.style.transform = `translate(${dx}px, ${dy}px) scale(${scaleX}, ${scaleY})`;
-
-    coreHome.getBoundingClientRect(); // force reflow so the start position registers
-
-    requestAnimationFrame(() => {
-      coreHome.style.transition = 'transform 0.6s cubic-bezier(0.4, 0, 0.2, 1)';
-      coreHome.style.transform = '';
-    });
+  // A quick expanding flash at the click point, timed with the zoom-in.
+  function triggerFlash(x, y) {
+    chatFlash.style.left = x + 'px';
+    chatFlash.style.top = y + 'px';
+    chatFlash.classList.remove('burst');
+    void chatFlash.offsetWidth; // restart the animation
+    chatFlash.classList.add('burst');
   }
 
-  // Moves the spinning core into its free-floating slot under Quick Actions
-  // and turns the middle column into the chat transcript. Reversible — tied
-  // to whether the chat input actually has focus.
-  function activateChatMode() {
+  // Zoom transition: a circular clip-path expands outward from the core's
+  // screen position until it covers the viewport, revealing the fullscreen
+  // chat underneath. The dashboard behind dims/blurs at the same time.
+  function openChatOverlay() {
     if (chatActive) return;
     chatActive = true;
-    animateCoreMove(() => {
-      coreSvg.classList.add('core-mini');
-      miniCoreSlot.appendChild(coreHome);
-      miniCoreSlot.style.display = 'flex';
-      coreWrapEl.classList.add('chat-active');
-      chatTranscript.style.display = 'flex';
+    const rect = coreCenterHit.getBoundingClientRect();
+    const ox = rect.left + rect.width / 2;
+    const oy = rect.top + rect.height / 2;
+    const maxR = Math.hypot(Math.max(ox, window.innerWidth - ox), Math.max(oy, window.innerHeight - oy));
+
+    triggerFlash(ox, oy);
+    document.body.classList.add('chat-open');
+    chatOverlay.classList.add('open');
+    chatOverlay.style.transition = 'none';
+    chatOverlay.style.clipPath = `circle(0px at ${ox}px ${oy}px)`;
+    chatOverlay.getBoundingClientRect(); // force reflow
+
+    requestAnimationFrame(() => {
+      chatOverlay.style.transition = 'clip-path 0.65s cubic-bezier(.4,0,.2,1)';
+      chatOverlay.style.clipPath = `circle(${maxR}px at ${ox}px ${oy}px)`;
     });
+
+    setTimeout(() => chatInputBar.classList.add('show'), 380);
+    // once fully open, drop the clip-path entirely so a later window resize
+    // (or the on-screen keyboard on mobile) can't leave a stale circular edge
+    setTimeout(() => { if (chatActive) chatOverlay.style.clipPath = 'none'; }, 660);
   }
 
-  function deactivateChatMode() {
+  function closeChatOverlay() {
     if (!chatActive) return;
     chatActive = false;
-    animateCoreMove(() => {
-      coreSvg.classList.remove('core-mini');
-      coreWrapEl.insertBefore(coreHome, debriefEl);
-      miniCoreSlot.style.display = 'none';
-      coreWrapEl.classList.remove('chat-active');
-      chatTranscript.style.display = 'none';
+    chatInputBar.classList.remove('show');
+    chatHistoryDrawer.classList.remove('open');
+
+    const rect = coreCenterHit.getBoundingClientRect();
+    const ox = rect.left + rect.width / 2;
+    const oy = rect.top + rect.height / 2;
+    const maxR = Math.hypot(Math.max(ox, window.innerWidth - ox), Math.max(oy, window.innerHeight - oy));
+
+    // clip-path can't interpolate from 'none', so re-establish the fully-open
+    // circle first (matches what's already on screen), then animate it shut
+    chatOverlay.style.transition = 'none';
+    chatOverlay.style.clipPath = `circle(${maxR}px at ${ox}px ${oy}px)`;
+    chatOverlay.getBoundingClientRect(); // force reflow
+
+    requestAnimationFrame(() => {
+      chatOverlay.style.transition = 'clip-path 0.5s cubic-bezier(.4,0,.2,1)';
+      chatOverlay.style.clipPath = `circle(0px at ${ox}px ${oy}px)`;
     });
+    document.body.classList.remove('chat-open');
+
+    setTimeout(() => chatOverlay.classList.remove('open'), 500);
   }
+
+  chatOverlayCloseBtn.addEventListener('click', closeChatOverlay);
+  chatHistoryToggle.addEventListener('click', () => chatHistoryDrawer.classList.toggle('open'));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && chatActive) closeChatOverlay();
+  });
 
   async function fetchAllMessages() {
     const { data, error } = await sb
@@ -1022,7 +1349,7 @@
 
     chatHistoryListEl.querySelectorAll('.chat-history-item[data-id]').forEach((el) => {
       const id = el.dataset.id;
-      el.addEventListener('click', () => { switchConversation(id); askInput.focus(); });
+      el.addEventListener('click', () => { switchConversation(id); chatHistoryDrawer.classList.remove('open'); askInput.focus(); });
       el.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         showContextMenu(e.clientX, e.clientY, id);
@@ -1036,7 +1363,7 @@
     currentConversationId = id;
     claudeChatHistory = conv.messages.slice();
     chatTranscript.innerHTML = '';
-    if (reveal) activateChatMode();
+    if (reveal) openChatOverlay();
     claudeChatHistory.forEach((m) => appendChatBubble(m.role, m.content));
     renderChatHistoryList();
   }
@@ -1103,7 +1430,7 @@
       currentConversationId = null;
       claudeChatHistory = [];
       chatTranscript.innerHTML = '';
-      deactivateChatMode();
+      closeChatOverlay();
     }
     refreshConversationList();
   }
@@ -1128,7 +1455,8 @@
     createConversationRecord(currentConversationId);
     claudeChatHistory = [];
     chatTranscript.innerHTML = '';
-    activateChatMode();
+    openChatOverlay();
+    chatHistoryDrawer.classList.remove('open');
     renderChatHistoryList();
     askInput.focus();
   }
@@ -1196,7 +1524,7 @@
       currentConversationId = newConversationId();
       createConversationRecord(currentConversationId);
     }
-    activateChatMode();
+    openChatOverlay();
 
     appendChatBubble('user', text);
 
@@ -1357,8 +1685,6 @@
       sendClaudeMessage(text);
     }
   });
-  askInput.addEventListener('focus', () => activateChatMode());
-  askInput.addEventListener('blur', () => deactivateChatMode());
 
   /* ================= Profit tracker (Supabase-backed) ================= */
   // profit_entries: { day (date, unique), amount (numeric), breakdown (jsonb: {storeName: amount}) }
