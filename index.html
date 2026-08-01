@@ -984,6 +984,63 @@
     }
   }
 
+  /* ================= Global memory — persists across every conversation ================= */
+  let memoryFacts = [];
+
+  async function loadMemoryFacts() {
+    try {
+      const { data, error } = await sb.from('claude_memory').select('content').order('created_at', { ascending: true });
+      if (error) { console.error('Memory load error:', error); return; }
+      memoryFacts = (data || []).map((r) => r.content);
+    } catch (err) {
+      console.error('Memory load failed:', err);
+    }
+  }
+
+  async function saveMemoryFact(content) {
+    content = (content || '').trim();
+    if (!content) return;
+    memoryFacts.push(content);
+    try {
+      await sb.from('claude_memory').insert({ content });
+    } catch (err) {
+      console.error('Memory save error:', err);
+    }
+  }
+
+  function buildSystemPrompt() {
+    if (!memoryFacts.length) return undefined;
+    return 'Known facts about the user carried over from past conversations, regardless of which chat this is:\n' +
+      memoryFacts.map((f) => '- ' + f).join('\n');
+  }
+
+  // Cheap background call (always Haiku, regardless of the model you're
+  // chatting with) that pulls out anything durable worth remembering
+  // long-term from the exchange that just happened. Fire-and-forget —
+  // never blocks or delays the visible reply.
+  async function extractMemoryFromExchange(userText, assistantText) {
+    try {
+      const prompt = `From this exchange, list any new durable facts worth remembering about the user long-term (business details, preferences, decisions, names, numbers). Reply with ONLY a JSON array of short plain strings, no markdown, no explanation. If nothing durable, reply with [].\n\nUser: ${userText}\nAssistant: ${assistantText}`;
+      const res = await fetch(CLAUDE_PROXY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: prompt }],
+          model: 'claude-haiku-4-5-20251001',
+        }),
+      });
+      const data = await res.json();
+      const raw = (data.reply || '[]').trim();
+      const match = raw.match(/\[[\s\S]*\]/);
+      const facts = match ? JSON.parse(match[0]) : [];
+      for (const fact of facts) {
+        if (typeof fact === 'string' && fact.trim()) await saveMemoryFact(fact);
+      }
+    } catch (err) {
+      console.error('Memory extraction failed:', err);
+    }
+  }
+
   async function sendClaudeMessage(text) {
     text = text.trim();
     if (!text) return;
@@ -991,6 +1048,16 @@
     activateChatMode();
 
     appendChatBubble('user', text);
+
+    // Explicit override: "remember: ..." stores instantly, no API call, no ambiguity.
+    const rememberMatch = text.match(/^remember:\s*(.+)/i);
+    if (rememberMatch) {
+      await saveMemoryFact(rememberMatch[1]);
+      appendChatBubble('assistant', "Got it — I'll remember that.");
+      chatTranscript.scrollTop = chatTranscript.scrollHeight;
+      return;
+    }
+
     claudeChatHistory.push({ role: 'user', content: text });
     saveChatMessage('user', text);
 
@@ -1001,13 +1068,14 @@
       const res = await fetch(CLAUDE_PROXY_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: contextMessages, model: selectedModel }),
+        body: JSON.stringify({ messages: contextMessages, model: selectedModel, system: buildSystemPrompt() }),
       });
       const data = await res.json();
       const reply = data.reply || 'No response.';
       pending.textContent = reply;
       claudeChatHistory.push({ role: 'assistant', content: reply });
       await saveChatMessage('assistant', reply);
+      extractMemoryFromExchange(text, reply); // fire-and-forget
     } catch (err) {
       pending.textContent = 'Error reaching Claude.';
       console.error('Claude chat error:', err);
@@ -1024,6 +1092,7 @@
       switchConversation(cachedConversations[0].id, false);
     }
   });
+  loadMemoryFacts();
 
   function selectTask(id) {
     selectedTaskId = id;
